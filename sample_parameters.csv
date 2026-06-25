@@ -1,0 +1,9 @@
+address,parameter,data_type,scaling,unit
+40001,Voltage L1,u16,0.1,V
+40002,Voltage L2,u16,0.1,V
+40003,Voltage L3,u16,0.1,V
+40010,Current L1,u16,0.01,A
+40011,Current L2,u16,0.01,A
+40020,Total Power,u32,1,W
+40030,Energy Import,u32,0.001,kWh
+40040,Frequency,u16,0.01,Hz
