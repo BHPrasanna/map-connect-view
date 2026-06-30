@@ -274,9 +274,6 @@ class MappingPage(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.itemChanged.connect(self._on_item_changed)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setAlternatingRowColors(True)
-        self.table.itemChanged.connect(self._on_item_changed)
         cl.addWidget(self.table)
 
         root.addWidget(card, 1)
