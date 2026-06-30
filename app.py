@@ -545,21 +545,26 @@ class ConnectionPage(QWidget):
         self.connected_changed.emit(self.store.connected)
 
     def _rebuild_fields(self, proto):
-        while self.fields_form.rowCount():
-            self.fields_form.removeRow(0)
+        # Remove existing dynamic rows (everything between Protocol row and Polling Rate row)
+        # Strategy: clear all rows after index 0, then re-append dynamic fields + polling row
+        while self.form.rowCount() > 1:
+            self.form.removeRow(1)
         self.field_widgets.clear()
-
-        def bold(text):
-            lbl = QLabel(text); lbl.setObjectName("FieldLabel"); return lbl
+        bold = self._dynamic_label
 
         if proto == "Modbus TCP":
-            ip = QLineEdit("127.0.0.1"); ip.setMaximumWidth(360)
-            port = QLineEdit("502"); port.setMaximumWidth(360)
-            unit = QLineEdit("1"); unit.setMaximumWidth(360)
-            self.fields_form.addRow(bold("IP Address"), ip)
-            self.fields_form.addRow(bold("Port"), port)
-            self.fields_form.addRow(bold("Unit ID"), unit)
+            ip = QLineEdit("127.0.0.1")
+            port = QLineEdit("502")
+            unit = QLineEdit("1")
+            for w in (ip, port, unit):
+                w.setMinimumWidth(360)
+                w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.form.addRow(bold("IP Address"), ip)
+            self.form.addRow(bold("Port"), port)
+            self.form.addRow(bold("Unit ID"), unit)
             self.field_widgets = {"ip": ip, "port": port, "unit": unit}
+
+        self.form.addRow(bold("Polling Rate"), self.poll_combo)
 
 
     def toggle_connect(self):
