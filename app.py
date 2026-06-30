@@ -936,11 +936,25 @@ class MainWindow(QMainWindow):
         self.parameters_page.refresh()
         self.nav.setCurrentRow(2)
 
+    def _toggle_theme(self):
+        app = QApplication.instance()
+        if getattr(app, "_theme", "light") == "light":
+            app.setStyleSheet(DARK_STYLE)
+            app._theme = "dark"
+            self.theme_btn.setText("☀")
+            self.theme_btn.setToolTip("Switch to light theme")
+        else:
+            app.setStyleSheet(LIGHT_STYLE)
+            app._theme = "light"
+            self.theme_btn.setText("🌙")
+            self.theme_btn.setToolTip("Switch to dark theme")
+
 
 # ---------- Entry -----------------------------------------------------------
 def main():
     app = QApplication(sys.argv)
-    app.setStyleSheet(STYLE)
+    app._theme = "light"
+    app.setStyleSheet(LIGHT_STYLE)
     w = MainWindow()
     w.show()
     sys.exit(app.exec_())
