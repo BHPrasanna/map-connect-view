@@ -576,10 +576,39 @@ class ConnectionPage(QWidget):
             self.log.emit("ERR", f"addr={p.address} crash: {e}")
             return None
 
-
 # ---------- Parameters page -------------------------------------------------
+class ReorderTable(QTableWidget):
+    """QTableWidget that supports drag-and-drop row reordering and notifies via row_moved(src, dst)."""
+    row_moved = pyqtSignal(int, int)
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.viewport().setAcceptDrops(True)
+        self.setDragDropOverwriteMode(False)
+        self.setDropIndicatorShown(True)
+        self.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+
+    def dropEvent(self, event):
+        if event.source() is not self:
+            return
+        src = self.currentRow()
+        drop_row = self.indexAt(event.pos()).row()
+        if drop_row == -1:
+            drop_row = self.rowCount() - 1
+        if src == -1 or src == drop_row:
+            event.ignore()
+            return
+        event.setDropAction(Qt.MoveAction)
+        event.accept()
+        self.row_moved.emit(src, drop_row)
+
+
 class ParametersPage(QWidget):
-    COLS = ["", "S.No", "Parameter", "Address", "Value", "Unit"]
+    COLS = ["S.No", "Parameter", "Address", "Value", "Unit", ""]
 
     def __init__(self, store, connection: "ConnectionPage"):
         super().__init__()
@@ -602,7 +631,7 @@ class ParametersPage(QWidget):
 
         title = QLabel("Parameters")
         title.setObjectName("PageTitle")
-        sub = QLabel("Live values update once connected. Use the ☰ menu on each row to reorder.")
+        sub = QLabel("Live values update once connected. Drag the ⋮⋮ handle on any row to reorder.")
         sub.setObjectName("PageSubtitle")
         root.addWidget(title)
         root.addWidget(sub)
@@ -610,15 +639,18 @@ class ParametersPage(QWidget):
         card = QFrame(); card.setObjectName("Card")
         cl = QVBoxLayout(card); cl.setContentsMargins(16, 16, 16, 16)
 
-        self.table = QTableWidget(0, len(self.COLS))
+        self.table = ReorderTable(0, len(self.COLS))
         self.table.setHorizontalHeaderLabels(self.COLS)
         h = self.table.horizontalHeader()
         h.setSectionResizeMode(QHeaderView.Stretch)
         h.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        h.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(len(self.COLS) - 1, QHeaderView.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self.table.verticalHeader().setDefaultSectionSize(30)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
+        self.table.row_moved.connect(self._on_row_moved)
         cl.addWidget(self.table)
 
         root.addWidget(card, 1)
@@ -626,48 +658,30 @@ class ParametersPage(QWidget):
     def refresh(self):
         self.table.setRowCount(len(self.store.parameters))
         for r, p in enumerate(self.store.parameters):
-            # hamburger menu button
-            btn = QToolButton()
-            btn.setObjectName("RowMenu")
-            btn.setText("☰")
-            btn.setPopupMode(QToolButton.InstantPopup)
-            menu = QMenu(btn)
-            up = QAction("▲  Move Up", menu); up.triggered.connect(lambda _, i=r: self._move(i, -1))
-            dn = QAction("▼  Move Down", menu); dn.triggered.connect(lambda _, i=r: self._move(i, 1))
-            top = QAction("⤒  Move to Top", menu); top.triggered.connect(lambda _, i=r: self._move_to(i, 0))
-            bot = QAction("⤓  Move to Bottom", menu); bot.triggered.connect(lambda _, i=r: self._move_to(i, len(self.store.parameters) - 1))
-            rm = QAction("🗑  Remove", menu); rm.triggered.connect(lambda _, i=r: self._remove(i))
-            menu.addAction(up); menu.addAction(dn); menu.addAction(top); menu.addAction(bot)
-            menu.addSeparator(); menu.addAction(rm)
-            btn.setMenu(menu)
-            self.table.setCellWidget(r, 0, btn)
-
             val = "" if p.value is None else str(p.value)
-            vals = [None, str(r + 1), p.name, str(p.address), val, p.unit]
+            vals = [str(r + 1), p.name, str(p.address), val, p.unit]
             for c, v in enumerate(vals):
-                if c == 0:
-                    continue
                 item = QTableWidgetItem(v)
-                if c != 2:
+                if c != 1:
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(r, c, item)
+            # Drag handle in last column
+            handle = QLabel("⋮⋮")
+            handle.setObjectName("DragHandle")
+            handle.setAlignment(Qt.AlignCenter)
+            handle.setToolTip("Drag to reorder")
+            handle.setCursor(Qt.OpenHandCursor)
+            self.table.setCellWidget(r, len(self.COLS) - 1, handle)
 
-    def _move(self, idx: int, delta: int):
-        new = idx + delta
-        if 0 <= new < len(self.store.parameters):
-            ps = self.store.parameters
-            ps[idx], ps[new] = ps[new], ps[idx]
-            self.refresh()
-
-    def _move_to(self, idx: int, target: int):
+    def _on_row_moved(self, src: int, dst: int):
         ps = self.store.parameters
-        if 0 <= idx < len(ps) and 0 <= target < len(ps):
-            p = ps.pop(idx)
-            ps.insert(target, p)
-            self.refresh()
+        if not (0 <= src < len(ps)):
+            return
+        dst = max(0, min(dst, len(ps) - 1))
+        p = ps.pop(src)
+        ps.insert(dst, p)
+        self.refresh()
 
-    def _remove(self, idx: int):
-        if 0 <= idx < len(self.store.parameters):
             del self.store.parameters[idx]
             self.refresh()
 
