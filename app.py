@@ -475,36 +475,49 @@ class ConnectionPage(QWidget):
         root.addWidget(title)
         root.addWidget(sub)
 
+        # Center the card horizontally and constrain its width so fields align nicely
+        center_row = QHBoxLayout()
+        center_row.addStretch()
         card = QFrame(); card.setObjectName("Card")
-        cl = QVBoxLayout(card); cl.setContentsMargins(24, 24, 24, 24); cl.setSpacing(16)
+        card.setMaximumWidth(720)
+        card.setMinimumWidth(560)
+        cl = QVBoxLayout(card); cl.setContentsMargins(32, 28, 32, 28); cl.setSpacing(14)
+        center_row.addWidget(card, 1)
+        center_row.addStretch()
 
         def bold(text):
-            lbl = QLabel(text); lbl.setObjectName("FieldLabel"); return lbl
+            lbl = QLabel(text); lbl.setObjectName("FieldLabel")
+            lbl.setMinimumWidth(120); lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            return lbl
 
-        proto_row = QFormLayout(); proto_row.setSpacing(12)
-        proto_row.setLabelAlignment(Qt.AlignLeft)
+        # Unified form — all labels share the left column, all fields share the right column
+        self.form = QFormLayout()
+        self.form.setSpacing(14)
+        self.form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.form.setFormAlignment(Qt.AlignTop)
+        self.form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        self.form.setHorizontalSpacing(20)
+
         self.proto_combo = QComboBox(); self.proto_combo.addItems(["Modbus TCP"])
         self.proto_combo.currentTextChanged.connect(self._rebuild_fields)
-        self.proto_combo.setMaximumWidth(360)
-        proto_row.addRow(bold("Protocol"), self.proto_combo)
-        cl.addLayout(proto_row)
+        self.proto_combo.setMinimumWidth(360)
+        self.proto_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.form.addRow(bold("Protocol"), self.proto_combo)
 
-        self.fields_form = QFormLayout(); self.fields_form.setSpacing(12)
-        self.fields_form.setLabelAlignment(Qt.AlignLeft)
+        # Placeholder rows for protocol-specific fields are appended/removed by _rebuild_fields
         self.field_widgets = {}
-        cl.addLayout(self.fields_form)
+        self._dynamic_label = bold  # keep reference for rebuild
 
-        # Polling rate
-        poll_form = QFormLayout(); poll_form.setSpacing(12)
-        poll_form.setLabelAlignment(Qt.AlignLeft)
         self.poll_combo = QComboBox()
         for label, _ in self.POLL_RATES:
             self.poll_combo.addItem(label)
-        self.poll_combo.setCurrentIndex(2)  # default 1 sec
-        self.poll_combo.setMaximumWidth(360)
+        self.poll_combo.setCurrentIndex(2)
+        self.poll_combo.setMinimumWidth(360)
+        self.poll_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.poll_combo.currentIndexChanged.connect(self._on_poll_changed)
-        poll_form.addRow(bold("Polling Rate"), self.poll_combo)
-        cl.addLayout(poll_form)
+        # Poll row is added after dynamic fields in _rebuild_fields
+
+        cl.addLayout(self.form)
 
         bottom = QHBoxLayout()
         self.status_dot = QLabel("●"); self.status_dot.setObjectName("StatusDot")
@@ -514,11 +527,12 @@ class ConnectionPage(QWidget):
         bottom.addWidget(self.status_text)
         bottom.addStretch()
         self.connect_btn = QPushButton("Connect")
+        self.connect_btn.setMinimumWidth(140)
         self.connect_btn.clicked.connect(self.toggle_connect)
         bottom.addWidget(self.connect_btn)
         cl.addLayout(bottom)
 
-        root.addWidget(card)
+        root.addLayout(center_row)
         root.addStretch()
 
         self._rebuild_fields(self.proto_combo.currentText())
