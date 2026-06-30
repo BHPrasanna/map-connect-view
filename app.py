@@ -766,8 +766,8 @@ class MainWindow(QMainWindow):
         sidebar.setFixedWidth(240)
         sl = QVBoxLayout(sidebar); sl.setContentsMargins(0, 0, 0, 0); sl.setSpacing(0)
 
-        # Transparent logo
         self.logo_label = QLabel()
+        self.logo_label.setObjectName("LogoLabel")
         script_dir = os.path.dirname(os.path.abspath(__file__))
         logo_path = os.path.join(script_dir, "delta_logo.png")
         pm = make_transparent_pixmap(logo_path, max_w=130) if os.path.exists(logo_path) else QPixmap()
@@ -775,9 +775,8 @@ class MainWindow(QMainWindow):
             self.logo_label.setPixmap(pm)
         else:
             self.logo_label.setText("◆")
-            self.logo_label.setStyleSheet("color:#ffffff; font-size:36px;")
+            self.logo_label.setStyleSheet("color:#ffffff; font-size:36px; background: transparent;")
         self.logo_label.setAlignment(Qt.AlignCenter)
-        self.logo_label.setStyleSheet(self.logo_label.styleSheet() + "background: transparent; padding: 22px 0 8px 0;")
         sl.addWidget(self.logo_label)
 
         brand = QLabel("Universal Modbus Monitor")
@@ -793,8 +792,7 @@ class MainWindow(QMainWindow):
             QListWidgetItem(label, self.nav)
         sl.addWidget(self.nav, 1)
 
-        footer = QLabel("v1.1")
-        footer.setStyleSheet("color:#6b7280; padding: 16px 20px;")
+        footer = QLabel("v1.1"); footer.setObjectName("Footer")
         sl.addWidget(footer)
 
         layout.addWidget(sidebar)
