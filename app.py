@@ -52,42 +52,40 @@ class Parameter:
     value: Optional[float] = None
 
 
-# ---------- Stylesheet ------------------------------------------------------
-STYLE = """
+# ---------- Stylesheets -----------------------------------------------------
+LIGHT_STYLE = """
 * { font-family: 'Segoe UI', 'Inter', sans-serif; font-size: 13px; color: #1f2937; }
 QMainWindow { background: #f6f7fb; }
 QStackedWidget, QStackedWidget > QWidget { background: #f6f7fb; }
 
-/* Sidebar — fully dark, all children transparent */
-#Sidebar { background: #0b1220; border: none; }
+/* Sidebar — off-white, distinct from main panel */
+#Sidebar { background: #ffffff; border-right: 1px solid #e5e7eb; }
 #Sidebar QWidget { background: transparent; }
-#Sidebar QLabel { background: transparent; color: #e5e7eb; }
+#Sidebar QLabel { background: transparent; color: #1f2937; }
 #Sidebar QLabel#Brand {
-    color: #f3f4f6; font-size: 14px; font-weight: 700;
+    color: #0f172a; font-size: 14px; font-weight: 800;
     padding: 6px 12px 2px 12px;
 }
 #Sidebar QLabel#BrandSub {
-    color: #9ca3af; font-size: 11px; padding: 0 12px 16px 12px;
+    color: #6b7280; font-size: 11px; padding: 0 12px 16px 12px; font-weight: 600;
 }
 #Sidebar QLabel#LogoLabel { background: transparent; padding: 22px 0 8px 0; }
-#Sidebar QLabel#Footer { color: #6b7280; padding: 16px 20px; background: transparent; }
+#Sidebar QLabel#Footer { color: #9ca3af; padding: 14px 20px; background: transparent; }
 
 QListWidget#NavList {
     background: transparent; border: none; outline: 0; padding: 8px;
 }
 QListWidget#NavList::item {
-    color: #cbd5e1; padding: 12px 16px; margin: 2px 6px;
-    border-radius: 8px; font-weight: 600; background: transparent;
+    color: #1f2937; padding: 12px 16px; margin: 2px 6px;
+    border-radius: 8px; font-weight: 800; background: transparent;
 }
-QListWidget#NavList::item:hover { background: #1f2937; color: #ffffff; }
+QListWidget#NavList::item:hover { background: #eef2ff; color: #1e3a8a; }
 QListWidget#NavList::item:selected { background: #2563eb; color: #ffffff; }
 
 #PageTitle { font-size: 22px; font-weight: 700; color: #0f172a; background: transparent; }
 #PageSubtitle { color: #6b7280; font-size: 13px; background: transparent; }
 
-QFrame#Card {
-    background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px;
-}
+QFrame#Card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; }
 QFrame#Card QLabel { background: transparent; }
 QLabel#FieldLabel { background: transparent; font-weight: 700; color: #0f172a; font-size: 13px; }
 QLabel#StatusDot { background: transparent; font-size: 18px; }
@@ -99,16 +97,19 @@ QPushButton {
 }
 QPushButton:hover { background: #1d4ed8; }
 QPushButton:disabled { background: #9ca3af; }
-QPushButton#Secondary {
-    background: #ffffff; color: #1f2937; border: 1px solid #d1d5db;
-}
+QPushButton#Secondary { background: #ffffff; color: #1f2937; border: 1px solid #d1d5db; }
 QPushButton#Secondary:hover { background: #f3f4f6; }
 QPushButton#Danger { background: #dc2626; }
 QPushButton#Danger:hover { background: #b91c1c; }
+QToolButton#ThemeToggle {
+    background: transparent; border: 1px solid #e5e7eb; border-radius: 8px;
+    padding: 6px; color: #1f2937; font-size: 14px;
+}
+QToolButton#ThemeToggle:hover { background: #f3f4f6; }
 
 QLineEdit, QComboBox {
     background: #ffffff; border: 1px solid #d1d5db; border-radius: 8px;
-    padding: 8px 10px; min-height: 20px;
+    padding: 8px 10px; min-height: 20px; color: #0f172a;
     selection-background-color: #2563eb;
 }
 QComboBox::drop-down { border: none; width: 22px; }
@@ -116,12 +117,86 @@ QLineEdit:focus, QComboBox:focus { border: 1px solid #2563eb; }
 
 QTableWidget {
     background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px;
-    gridline-color: #f1f5f9; selection-background-color: #dbeafe;
-    selection-color: #1e3a8a;
+    gridline-color: #f1f5f9; selection-background-color: #dbeafe; selection-color: #1e3a8a;
 }
 QHeaderView::section {
     background: #f9fafb; color: #374151; padding: 8px; border: none;
-    border-bottom: 1px solid #e5e7eb; font-weight: 600;
+    border-bottom: 1px solid #e5e7eb; font-weight: 700;
+}
+QTableWidget::item { padding: 2px 6px; }
+
+QPlainTextEdit#Console {
+    background: #ffffff; color: #1f2937; border: 1px solid #e5e7eb;
+    border-radius: 10px; padding: 12px;
+    font-family: 'Consolas', 'Menlo', monospace; font-size: 12px;
+}
+
+QLabel#DragHandle { background: transparent; color: #9ca3af; font-size: 16px; font-weight: 700; padding: 0 8px; }
+QLabel#DragHandle:hover { color: #2563eb; }
+"""
+
+DARK_STYLE = """
+* { font-family: 'Segoe UI', 'Inter', sans-serif; font-size: 13px; color: #e5e7eb; }
+QMainWindow { background: #0f172a; }
+QStackedWidget, QStackedWidget > QWidget { background: #0f172a; }
+
+#Sidebar { background: #0b1220; border-right: 1px solid #111827; }
+#Sidebar QWidget { background: transparent; }
+#Sidebar QLabel { background: transparent; color: #e5e7eb; }
+#Sidebar QLabel#Brand { color: #f3f4f6; font-size: 14px; font-weight: 800; padding: 6px 12px 2px 12px; }
+#Sidebar QLabel#BrandSub { color: #9ca3af; font-size: 11px; padding: 0 12px 16px 12px; font-weight: 600; }
+#Sidebar QLabel#LogoLabel { background: transparent; padding: 22px 0 8px 0; }
+#Sidebar QLabel#Footer { color: #6b7280; padding: 14px 20px; background: transparent; }
+
+QListWidget#NavList { background: transparent; border: none; outline: 0; padding: 8px; }
+QListWidget#NavList::item {
+    color: #cbd5e1; padding: 12px 16px; margin: 2px 6px;
+    border-radius: 8px; font-weight: 800; background: transparent;
+}
+QListWidget#NavList::item:hover { background: #1f2937; color: #ffffff; }
+QListWidget#NavList::item:selected { background: #2563eb; color: #ffffff; }
+
+#PageTitle { font-size: 22px; font-weight: 700; color: #f3f4f6; background: transparent; }
+#PageSubtitle { color: #9ca3af; font-size: 13px; background: transparent; }
+
+QFrame#Card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; }
+QFrame#Card QLabel { background: transparent; }
+QLabel#FieldLabel { background: transparent; font-weight: 700; color: #f3f4f6; font-size: 13px; }
+QLabel#StatusDot { background: transparent; font-size: 18px; }
+QLabel#StatusText { background: transparent; color: #d1d5db; font-weight: 600; }
+
+QPushButton {
+    background: #2563eb; color: white; border: none;
+    padding: 9px 18px; border-radius: 8px; font-weight: 600;
+}
+QPushButton:hover { background: #1d4ed8; }
+QPushButton:disabled { background: #4b5563; }
+QPushButton#Secondary { background: #1f2937; color: #e5e7eb; border: 1px solid #374151; }
+QPushButton#Secondary:hover { background: #374151; }
+QPushButton#Danger { background: #dc2626; }
+QPushButton#Danger:hover { background: #b91c1c; }
+QToolButton#ThemeToggle {
+    background: transparent; border: 1px solid #374151; border-radius: 8px;
+    padding: 6px; color: #e5e7eb; font-size: 14px;
+}
+QToolButton#ThemeToggle:hover { background: #1f2937; }
+
+QLineEdit, QComboBox {
+    background: #0b1220; border: 1px solid #374151; border-radius: 8px;
+    padding: 8px 10px; min-height: 20px; color: #f3f4f6;
+    selection-background-color: #2563eb;
+}
+QComboBox::drop-down { border: none; width: 22px; }
+QLineEdit:focus, QComboBox:focus { border: 1px solid #2563eb; }
+
+QTableWidget {
+    background: #111827; border: 1px solid #1f2937; border-radius: 10px;
+    gridline-color: #1f2937; selection-background-color: #1e3a8a; selection-color: #ffffff;
+    color: #e5e7eb;
+}
+QHeaderView::section {
+    background: #0b1220; color: #cbd5e1; padding: 8px; border: none;
+    border-bottom: 1px solid #1f2937; font-weight: 700;
 }
 QTableWidget::item { padding: 2px 6px; }
 
@@ -131,11 +206,8 @@ QPlainTextEdit#Console {
     font-family: 'Consolas', 'Menlo', monospace; font-size: 12px;
 }
 
-QLabel#DragHandle {
-    background: transparent; color: #9ca3af; font-size: 16px;
-    font-weight: 700; padding: 0 8px;
-}
-QLabel#DragHandle:hover { color: #2563eb; }
+QLabel#DragHandle { background: transparent; color: #9ca3af; font-size: 16px; font-weight: 700; padding: 0 8px; }
+QLabel#DragHandle:hover { color: #60a5fa; }
 """
 
 
@@ -245,15 +317,11 @@ class MappingPage(QWidget):
         self.add_btn = QPushButton("✎  + Add Parameter")
         self.add_btn.setObjectName("Secondary")
         self.add_btn.clicked.connect(self.add_parameter)
-        self.del_btn = QPushButton("🗑  Delete Row")
-        self.del_btn.setObjectName("Secondary")
-        self.del_btn.clicked.connect(self.delete_selected)
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.setObjectName("Secondary")
         self.clear_btn.clicked.connect(self.clear_all)
         bar.addWidget(self.import_btn)
         bar.addWidget(self.add_btn)
-        bar.addWidget(self.del_btn)
         bar.addStretch()
         bar.addWidget(self.clear_btn)
         root.addLayout(bar)
@@ -407,36 +475,49 @@ class ConnectionPage(QWidget):
         root.addWidget(title)
         root.addWidget(sub)
 
+        # Center the card horizontally and constrain its width so fields align nicely
+        center_row = QHBoxLayout()
+        center_row.addStretch()
         card = QFrame(); card.setObjectName("Card")
-        cl = QVBoxLayout(card); cl.setContentsMargins(24, 24, 24, 24); cl.setSpacing(16)
+        card.setMaximumWidth(720)
+        card.setMinimumWidth(560)
+        cl = QVBoxLayout(card); cl.setContentsMargins(32, 28, 32, 28); cl.setSpacing(14)
+        center_row.addWidget(card, 1)
+        center_row.addStretch()
 
         def bold(text):
-            lbl = QLabel(text); lbl.setObjectName("FieldLabel"); return lbl
+            lbl = QLabel(text); lbl.setObjectName("FieldLabel")
+            lbl.setMinimumWidth(120); lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            return lbl
 
-        proto_row = QFormLayout(); proto_row.setSpacing(12)
-        proto_row.setLabelAlignment(Qt.AlignLeft)
+        # Unified form — all labels share the left column, all fields share the right column
+        self.form = QFormLayout()
+        self.form.setSpacing(14)
+        self.form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.form.setFormAlignment(Qt.AlignTop)
+        self.form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        self.form.setHorizontalSpacing(20)
+
         self.proto_combo = QComboBox(); self.proto_combo.addItems(["Modbus TCP"])
         self.proto_combo.currentTextChanged.connect(self._rebuild_fields)
-        self.proto_combo.setMaximumWidth(360)
-        proto_row.addRow(bold("Protocol"), self.proto_combo)
-        cl.addLayout(proto_row)
+        self.proto_combo.setMinimumWidth(360)
+        self.proto_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.form.addRow(bold("Protocol"), self.proto_combo)
 
-        self.fields_form = QFormLayout(); self.fields_form.setSpacing(12)
-        self.fields_form.setLabelAlignment(Qt.AlignLeft)
+        # Placeholder rows for protocol-specific fields are appended/removed by _rebuild_fields
         self.field_widgets = {}
-        cl.addLayout(self.fields_form)
+        self._dynamic_label = bold  # keep reference for rebuild
 
-        # Polling rate
-        poll_form = QFormLayout(); poll_form.setSpacing(12)
-        poll_form.setLabelAlignment(Qt.AlignLeft)
         self.poll_combo = QComboBox()
         for label, _ in self.POLL_RATES:
             self.poll_combo.addItem(label)
-        self.poll_combo.setCurrentIndex(2)  # default 1 sec
-        self.poll_combo.setMaximumWidth(360)
+        self.poll_combo.setCurrentIndex(2)
+        self.poll_combo.setMinimumWidth(360)
+        self.poll_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.poll_combo.currentIndexChanged.connect(self._on_poll_changed)
-        poll_form.addRow(bold("Polling Rate"), self.poll_combo)
-        cl.addLayout(poll_form)
+        # Poll row is added after dynamic fields in _rebuild_fields
+
+        cl.addLayout(self.form)
 
         bottom = QHBoxLayout()
         self.status_dot = QLabel("●"); self.status_dot.setObjectName("StatusDot")
@@ -446,11 +527,12 @@ class ConnectionPage(QWidget):
         bottom.addWidget(self.status_text)
         bottom.addStretch()
         self.connect_btn = QPushButton("Connect")
+        self.connect_btn.setMinimumWidth(140)
         self.connect_btn.clicked.connect(self.toggle_connect)
         bottom.addWidget(self.connect_btn)
         cl.addLayout(bottom)
 
-        root.addWidget(card)
+        root.addLayout(center_row)
         root.addStretch()
 
         self._rebuild_fields(self.proto_combo.currentText())
@@ -463,21 +545,26 @@ class ConnectionPage(QWidget):
         self.connected_changed.emit(self.store.connected)
 
     def _rebuild_fields(self, proto):
-        while self.fields_form.rowCount():
-            self.fields_form.removeRow(0)
+        # Remove existing dynamic rows (everything between Protocol row and Polling Rate row)
+        # Strategy: clear all rows after index 0, then re-append dynamic fields + polling row
+        while self.form.rowCount() > 1:
+            self.form.removeRow(1)
         self.field_widgets.clear()
-
-        def bold(text):
-            lbl = QLabel(text); lbl.setObjectName("FieldLabel"); return lbl
+        bold = self._dynamic_label
 
         if proto == "Modbus TCP":
-            ip = QLineEdit("127.0.0.1"); ip.setMaximumWidth(360)
-            port = QLineEdit("502"); port.setMaximumWidth(360)
-            unit = QLineEdit("1"); unit.setMaximumWidth(360)
-            self.fields_form.addRow(bold("IP Address"), ip)
-            self.fields_form.addRow(bold("Port"), port)
-            self.fields_form.addRow(bold("Unit ID"), unit)
+            ip = QLineEdit("127.0.0.1")
+            port = QLineEdit("502")
+            unit = QLineEdit("1")
+            for w in (ip, port, unit):
+                w.setMinimumWidth(360)
+                w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.form.addRow(bold("IP Address"), ip)
+            self.form.addRow(bold("Port"), port)
+            self.form.addRow(bold("Unit ID"), unit)
             self.field_widgets = {"ip": ip, "port": port, "unit": unit}
+
+        self.form.addRow(bold("Polling Rate"), self.poll_combo)
 
 
     def toggle_connect(self):
@@ -723,11 +810,12 @@ class DebugConsolePage(QWidget):
 
     def append(self, direction: str, msg: str):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        color = {"TX": "#60a5fa", "RX": "#34d399", "ERR": "#f87171", "INFO": "#fbbf24"}.get(direction, "#d1d5db")
+        color = {"TX": "#2563eb", "RX": "#059669", "ERR": "#dc2626", "INFO": "#d97706"}.get(direction, "#6b7280")
+        # Message text inherits the console's current foreground so it works in both themes.
         self.console.appendHtml(
-            f'<span style="color:#6b7280;">[{ts}]</span> '
-            f'<span style="color:{color};font-weight:600;">{direction:<4}</span> '
-            f'<span style="color:#e5e7eb;">{msg}</span>'
+            f'<span style="color:#9ca3af;">[{ts}]</span> '
+            f'<span style="color:{color};font-weight:700;">{direction:<4}</span> '
+            f'<span>{msg}</span>'
         )
 
 
@@ -775,7 +863,7 @@ class MainWindow(QMainWindow):
             self.logo_label.setPixmap(pm)
         else:
             self.logo_label.setText("◆")
-            self.logo_label.setStyleSheet("color:#ffffff; font-size:36px; background: transparent;")
+            self.logo_label.setStyleSheet("color:#2563eb; font-size:36px; background: transparent;")
         self.logo_label.setAlignment(Qt.AlignCenter)
         sl.addWidget(self.logo_label)
 
@@ -792,8 +880,20 @@ class MainWindow(QMainWindow):
             QListWidgetItem(label, self.nav)
         sl.addWidget(self.nav, 1)
 
-        footer = QLabel("v1.1"); footer.setObjectName("Footer")
-        sl.addWidget(footer)
+        # Theme toggle + footer
+        footer_row = QHBoxLayout()
+        footer_row.setContentsMargins(16, 8, 16, 12)
+        footer = QLabel("v1.2"); footer.setObjectName("Footer")
+        footer.setContentsMargins(0, 0, 0, 0)
+        self.theme_btn = QToolButton()
+        self.theme_btn.setObjectName("ThemeToggle")
+        self.theme_btn.setText("🌙")
+        self.theme_btn.setToolTip("Switch to dark theme")
+        self.theme_btn.clicked.connect(self._toggle_theme)
+        footer_row.addWidget(footer)
+        footer_row.addStretch()
+        footer_row.addWidget(self.theme_btn)
+        sl.addLayout(footer_row)
 
         layout.addWidget(sidebar)
 
@@ -836,11 +936,25 @@ class MainWindow(QMainWindow):
         self.parameters_page.refresh()
         self.nav.setCurrentRow(2)
 
+    def _toggle_theme(self):
+        app = QApplication.instance()
+        if getattr(app, "_theme", "light") == "light":
+            app.setStyleSheet(DARK_STYLE)
+            app._theme = "dark"
+            self.theme_btn.setText("☀")
+            self.theme_btn.setToolTip("Switch to light theme")
+        else:
+            app.setStyleSheet(LIGHT_STYLE)
+            app._theme = "light"
+            self.theme_btn.setText("🌙")
+            self.theme_btn.setToolTip("Switch to dark theme")
+
 
 # ---------- Entry -----------------------------------------------------------
 def main():
     app = QApplication(sys.argv)
-    app.setStyleSheet(STYLE)
+    app._theme = "light"
+    app.setStyleSheet(LIGHT_STYLE)
     w = MainWindow()
     w.show()
     sys.exit(app.exec_())
