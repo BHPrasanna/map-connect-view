@@ -55,32 +55,43 @@ class Parameter:
 # ---------- Stylesheet ------------------------------------------------------
 STYLE = """
 * { font-family: 'Segoe UI', 'Inter', sans-serif; font-size: 13px; color: #1f2937; }
-QMainWindow, QWidget { background: #f6f7fb; }
+QMainWindow { background: #f6f7fb; }
+QStackedWidget, QStackedWidget > QWidget { background: #f6f7fb; }
 
-#Sidebar { background: #111827; border: none; }
+/* Sidebar — fully dark, all children transparent */
+#Sidebar { background: #0b1220; border: none; }
+#Sidebar QWidget { background: transparent; }
+#Sidebar QLabel { background: transparent; color: #e5e7eb; }
 #Sidebar QLabel#Brand {
-    color: #ffffff; font-size: 15px; font-weight: 700;
-    padding: 4px 12px 2px 12px;
+    color: #f3f4f6; font-size: 14px; font-weight: 700;
+    padding: 6px 12px 2px 12px;
 }
 #Sidebar QLabel#BrandSub {
     color: #9ca3af; font-size: 11px; padding: 0 12px 16px 12px;
 }
+#Sidebar QLabel#LogoLabel { background: transparent; padding: 22px 0 8px 0; }
+#Sidebar QLabel#Footer { color: #6b7280; padding: 16px 20px; background: transparent; }
+
 QListWidget#NavList {
     background: transparent; border: none; outline: 0; padding: 8px;
 }
 QListWidget#NavList::item {
-    color: #d1d5db; padding: 12px 16px; margin: 2px 6px;
-    border-radius: 8px; font-weight: 600;
+    color: #cbd5e1; padding: 12px 16px; margin: 2px 6px;
+    border-radius: 8px; font-weight: 600; background: transparent;
 }
 QListWidget#NavList::item:hover { background: #1f2937; color: #ffffff; }
 QListWidget#NavList::item:selected { background: #2563eb; color: #ffffff; }
 
-#PageTitle { font-size: 22px; font-weight: 700; color: #0f172a; }
-#PageSubtitle { color: #6b7280; font-size: 13px; }
+#PageTitle { font-size: 22px; font-weight: 700; color: #0f172a; background: transparent; }
+#PageSubtitle { color: #6b7280; font-size: 13px; background: transparent; }
 
 QFrame#Card {
     background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px;
 }
+QFrame#Card QLabel { background: transparent; }
+QLabel#FieldLabel { background: transparent; font-weight: 700; color: #0f172a; font-size: 13px; }
+QLabel#StatusDot { background: transparent; font-size: 18px; }
+QLabel#StatusText { background: transparent; color: #374151; font-weight: 600; }
 
 QPushButton {
     background: #2563eb; color: white; border: none;
@@ -97,8 +108,10 @@ QPushButton#Danger:hover { background: #b91c1c; }
 
 QLineEdit, QComboBox {
     background: #ffffff; border: 1px solid #d1d5db; border-radius: 8px;
-    padding: 8px 10px; selection-background-color: #2563eb;
+    padding: 8px 10px; min-height: 20px;
+    selection-background-color: #2563eb;
 }
+QComboBox::drop-down { border: none; width: 22px; }
 QLineEdit:focus, QComboBox:focus { border: 1px solid #2563eb; }
 
 QTableWidget {
@@ -107,13 +120,10 @@ QTableWidget {
     selection-color: #1e3a8a;
 }
 QHeaderView::section {
-    background: #f9fafb; color: #374151; padding: 10px; border: none;
+    background: #f9fafb; color: #374151; padding: 8px; border: none;
     border-bottom: 1px solid #e5e7eb; font-weight: 600;
 }
-QTableWidget::item { padding: 6px; }
-
-QLabel#StatusDot { font-size: 18px; }
-QLabel#StatusText { color: #6b7280; }
+QTableWidget::item { padding: 2px 6px; }
 
 QPlainTextEdit#Console {
     background: #0b1020; color: #d1d5db; border: 1px solid #1f2937;
@@ -121,11 +131,11 @@ QPlainTextEdit#Console {
     font-family: 'Consolas', 'Menlo', monospace; font-size: 12px;
 }
 
-QToolButton#RowMenu {
-    background: transparent; border: none; padding: 2px 6px;
-    color: #6b7280; font-size: 16px; font-weight: 700;
+QLabel#DragHandle {
+    background: transparent; color: #9ca3af; font-size: 16px;
+    font-weight: 700; padding: 0 8px;
 }
-QToolButton#RowMenu:hover { color: #2563eb; }
+QLabel#DragHandle:hover { color: #2563eb; }
 """
 
 
@@ -230,7 +240,7 @@ class MappingPage(QWidget):
         root.addWidget(sub)
 
         bar = QHBoxLayout(); bar.setSpacing(10)
-        self.import_btn = QPushButton("⬆  Import CSV")
+        self.import_btn = QPushButton("Import CSV")
         self.import_btn.clicked.connect(self.import_csv)
         self.add_btn = QPushButton("✎  + Add Parameter")
         self.add_btn.setObjectName("Secondary")
@@ -256,6 +266,9 @@ class MappingPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
+        # Compact fixed row height so editor doesn't grow the row
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self.table.verticalHeader().setDefaultSectionSize(30)
         # Editable on double-click
         self.table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -397,29 +410,37 @@ class ConnectionPage(QWidget):
         card = QFrame(); card.setObjectName("Card")
         cl = QVBoxLayout(card); cl.setContentsMargins(24, 24, 24, 24); cl.setSpacing(16)
 
+        def bold(text):
+            lbl = QLabel(text); lbl.setObjectName("FieldLabel"); return lbl
+
         proto_row = QFormLayout(); proto_row.setSpacing(12)
+        proto_row.setLabelAlignment(Qt.AlignLeft)
         self.proto_combo = QComboBox(); self.proto_combo.addItems(["Modbus TCP"])
         self.proto_combo.currentTextChanged.connect(self._rebuild_fields)
-        proto_row.addRow("Protocol", self.proto_combo)
+        self.proto_combo.setMaximumWidth(360)
+        proto_row.addRow(bold("Protocol"), self.proto_combo)
         cl.addLayout(proto_row)
 
         self.fields_form = QFormLayout(); self.fields_form.setSpacing(12)
+        self.fields_form.setLabelAlignment(Qt.AlignLeft)
         self.field_widgets = {}
         cl.addLayout(self.fields_form)
 
         # Polling rate
         poll_form = QFormLayout(); poll_form.setSpacing(12)
+        poll_form.setLabelAlignment(Qt.AlignLeft)
         self.poll_combo = QComboBox()
         for label, _ in self.POLL_RATES:
             self.poll_combo.addItem(label)
         self.poll_combo.setCurrentIndex(2)  # default 1 sec
+        self.poll_combo.setMaximumWidth(360)
         self.poll_combo.currentIndexChanged.connect(self._on_poll_changed)
-        poll_form.addRow("Polling Rate", self.poll_combo)
+        poll_form.addRow(bold("Polling Rate"), self.poll_combo)
         cl.addLayout(poll_form)
 
         bottom = QHBoxLayout()
         self.status_dot = QLabel("●"); self.status_dot.setObjectName("StatusDot")
-        self.status_dot.setStyleSheet("color:#9ca3af;")
+        self.status_dot.setStyleSheet("color:#9ca3af; background: transparent;")
         self.status_text = QLabel("Disconnected"); self.status_text.setObjectName("StatusText")
         bottom.addWidget(self.status_dot)
         bottom.addWidget(self.status_text)
@@ -439,21 +460,25 @@ class ConnectionPage(QWidget):
 
     def _on_poll_changed(self, _idx):
         self.log.emit("INFO", f"Polling rate set to {self.poll_combo.currentText()}")
-        # MainWindow listens via poll_combo signal? Easier: emit connected_changed with current state
         self.connected_changed.emit(self.store.connected)
 
     def _rebuild_fields(self, proto):
         while self.fields_form.rowCount():
             self.fields_form.removeRow(0)
         self.field_widgets.clear()
+
+        def bold(text):
+            lbl = QLabel(text); lbl.setObjectName("FieldLabel"); return lbl
+
         if proto == "Modbus TCP":
-            ip = QLineEdit("127.0.0.1")
-            port = QLineEdit("502")
-            unit = QLineEdit("1")
-            self.fields_form.addRow("IP Address", ip)
-            self.fields_form.addRow("Port", port)
-            self.fields_form.addRow("Unit ID", unit)
+            ip = QLineEdit("127.0.0.1"); ip.setMaximumWidth(360)
+            port = QLineEdit("502"); port.setMaximumWidth(360)
+            unit = QLineEdit("1"); unit.setMaximumWidth(360)
+            self.fields_form.addRow(bold("IP Address"), ip)
+            self.fields_form.addRow(bold("Port"), port)
+            self.fields_form.addRow(bold("Unit ID"), unit)
             self.field_widgets = {"ip": ip, "port": port, "unit": unit}
+
 
     def toggle_connect(self):
         if self.store.connected:
@@ -551,10 +576,39 @@ class ConnectionPage(QWidget):
             self.log.emit("ERR", f"addr={p.address} crash: {e}")
             return None
 
-
 # ---------- Parameters page -------------------------------------------------
+class ReorderTable(QTableWidget):
+    """QTableWidget that supports drag-and-drop row reordering and notifies via row_moved(src, dst)."""
+    row_moved = pyqtSignal(int, int)
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.viewport().setAcceptDrops(True)
+        self.setDragDropOverwriteMode(False)
+        self.setDropIndicatorShown(True)
+        self.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+
+    def dropEvent(self, event):
+        if event.source() is not self:
+            return
+        src = self.currentRow()
+        drop_row = self.indexAt(event.pos()).row()
+        if drop_row == -1:
+            drop_row = self.rowCount() - 1
+        if src == -1 or src == drop_row:
+            event.ignore()
+            return
+        event.setDropAction(Qt.MoveAction)
+        event.accept()
+        self.row_moved.emit(src, drop_row)
+
+
 class ParametersPage(QWidget):
-    COLS = ["", "S.No", "Parameter", "Address", "Value", "Unit"]
+    COLS = ["S.No", "Parameter", "Address", "Value", "Unit", ""]
 
     def __init__(self, store, connection: "ConnectionPage"):
         super().__init__()
@@ -577,7 +631,7 @@ class ParametersPage(QWidget):
 
         title = QLabel("Parameters")
         title.setObjectName("PageTitle")
-        sub = QLabel("Live values update once connected. Use the ☰ menu on each row to reorder.")
+        sub = QLabel("Live values update once connected. Drag the ⋮⋮ handle on any row to reorder.")
         sub.setObjectName("PageSubtitle")
         root.addWidget(title)
         root.addWidget(sub)
@@ -585,15 +639,18 @@ class ParametersPage(QWidget):
         card = QFrame(); card.setObjectName("Card")
         cl = QVBoxLayout(card); cl.setContentsMargins(16, 16, 16, 16)
 
-        self.table = QTableWidget(0, len(self.COLS))
+        self.table = ReorderTable(0, len(self.COLS))
         self.table.setHorizontalHeaderLabels(self.COLS)
         h = self.table.horizontalHeader()
         h.setSectionResizeMode(QHeaderView.Stretch)
         h.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        h.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(len(self.COLS) - 1, QHeaderView.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self.table.verticalHeader().setDefaultSectionSize(30)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
+        self.table.row_moved.connect(self._on_row_moved)
         cl.addWidget(self.table)
 
         root.addWidget(card, 1)
@@ -601,50 +658,31 @@ class ParametersPage(QWidget):
     def refresh(self):
         self.table.setRowCount(len(self.store.parameters))
         for r, p in enumerate(self.store.parameters):
-            # hamburger menu button
-            btn = QToolButton()
-            btn.setObjectName("RowMenu")
-            btn.setText("☰")
-            btn.setPopupMode(QToolButton.InstantPopup)
-            menu = QMenu(btn)
-            up = QAction("▲  Move Up", menu); up.triggered.connect(lambda _, i=r: self._move(i, -1))
-            dn = QAction("▼  Move Down", menu); dn.triggered.connect(lambda _, i=r: self._move(i, 1))
-            top = QAction("⤒  Move to Top", menu); top.triggered.connect(lambda _, i=r: self._move_to(i, 0))
-            bot = QAction("⤓  Move to Bottom", menu); bot.triggered.connect(lambda _, i=r: self._move_to(i, len(self.store.parameters) - 1))
-            rm = QAction("🗑  Remove", menu); rm.triggered.connect(lambda _, i=r: self._remove(i))
-            menu.addAction(up); menu.addAction(dn); menu.addAction(top); menu.addAction(bot)
-            menu.addSeparator(); menu.addAction(rm)
-            btn.setMenu(menu)
-            self.table.setCellWidget(r, 0, btn)
-
             val = "" if p.value is None else str(p.value)
-            vals = [None, str(r + 1), p.name, str(p.address), val, p.unit]
+            vals = [str(r + 1), p.name, str(p.address), val, p.unit]
             for c, v in enumerate(vals):
-                if c == 0:
-                    continue
                 item = QTableWidgetItem(v)
-                if c != 2:
+                if c != 1:
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(r, c, item)
+            # Drag handle in last column
+            handle = QLabel("⋮⋮")
+            handle.setObjectName("DragHandle")
+            handle.setAlignment(Qt.AlignCenter)
+            handle.setToolTip("Drag to reorder")
+            handle.setCursor(Qt.OpenHandCursor)
+            self.table.setCellWidget(r, len(self.COLS) - 1, handle)
 
-    def _move(self, idx: int, delta: int):
-        new = idx + delta
-        if 0 <= new < len(self.store.parameters):
-            ps = self.store.parameters
-            ps[idx], ps[new] = ps[new], ps[idx]
-            self.refresh()
-
-    def _move_to(self, idx: int, target: int):
+    def _on_row_moved(self, src: int, dst: int):
         ps = self.store.parameters
-        if 0 <= idx < len(ps) and 0 <= target < len(ps):
-            p = ps.pop(idx)
-            ps.insert(target, p)
-            self.refresh()
+        if not (0 <= src < len(ps)):
+            return
+        dst = max(0, min(dst, len(ps) - 1))
+        p = ps.pop(src)
+        ps.insert(dst, p)
+        self.refresh()
 
-    def _remove(self, idx: int):
-        if 0 <= idx < len(self.store.parameters):
-            del self.store.parameters[idx]
-            self.refresh()
+
 
     def poll_values(self):
         if self.store.connected:
@@ -728,8 +766,8 @@ class MainWindow(QMainWindow):
         sidebar.setFixedWidth(240)
         sl = QVBoxLayout(sidebar); sl.setContentsMargins(0, 0, 0, 0); sl.setSpacing(0)
 
-        # Transparent logo
         self.logo_label = QLabel()
+        self.logo_label.setObjectName("LogoLabel")
         script_dir = os.path.dirname(os.path.abspath(__file__))
         logo_path = os.path.join(script_dir, "delta_logo.png")
         pm = make_transparent_pixmap(logo_path, max_w=130) if os.path.exists(logo_path) else QPixmap()
@@ -737,9 +775,8 @@ class MainWindow(QMainWindow):
             self.logo_label.setPixmap(pm)
         else:
             self.logo_label.setText("◆")
-            self.logo_label.setStyleSheet("color:#ffffff; font-size:36px;")
+            self.logo_label.setStyleSheet("color:#ffffff; font-size:36px; background: transparent;")
         self.logo_label.setAlignment(Qt.AlignCenter)
-        self.logo_label.setStyleSheet(self.logo_label.styleSheet() + "background: transparent; padding: 22px 0 8px 0;")
         sl.addWidget(self.logo_label)
 
         brand = QLabel("Universal Modbus Monitor")
@@ -755,8 +792,7 @@ class MainWindow(QMainWindow):
             QListWidgetItem(label, self.nav)
         sl.addWidget(self.nav, 1)
 
-        footer = QLabel("v1.1")
-        footer.setStyleSheet("color:#6b7280; padding: 16px 20px;")
+        footer = QLabel("v1.1"); footer.setObjectName("Footer")
         sl.addWidget(footer)
 
         layout.addWidget(sidebar)
