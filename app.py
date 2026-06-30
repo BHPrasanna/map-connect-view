@@ -55,32 +55,43 @@ class Parameter:
 # ---------- Stylesheet ------------------------------------------------------
 STYLE = """
 * { font-family: 'Segoe UI', 'Inter', sans-serif; font-size: 13px; color: #1f2937; }
-QMainWindow, QWidget { background: #f6f7fb; }
+QMainWindow { background: #f6f7fb; }
+QStackedWidget, QStackedWidget > QWidget { background: #f6f7fb; }
 
-#Sidebar { background: #111827; border: none; }
+/* Sidebar — fully dark, all children transparent */
+#Sidebar { background: #0b1220; border: none; }
+#Sidebar QWidget { background: transparent; }
+#Sidebar QLabel { background: transparent; color: #e5e7eb; }
 #Sidebar QLabel#Brand {
-    color: #ffffff; font-size: 15px; font-weight: 700;
-    padding: 4px 12px 2px 12px;
+    color: #f3f4f6; font-size: 14px; font-weight: 700;
+    padding: 6px 12px 2px 12px;
 }
 #Sidebar QLabel#BrandSub {
     color: #9ca3af; font-size: 11px; padding: 0 12px 16px 12px;
 }
+#Sidebar QLabel#LogoLabel { background: transparent; padding: 22px 0 8px 0; }
+#Sidebar QLabel#Footer { color: #6b7280; padding: 16px 20px; background: transparent; }
+
 QListWidget#NavList {
     background: transparent; border: none; outline: 0; padding: 8px;
 }
 QListWidget#NavList::item {
-    color: #d1d5db; padding: 12px 16px; margin: 2px 6px;
-    border-radius: 8px; font-weight: 600;
+    color: #cbd5e1; padding: 12px 16px; margin: 2px 6px;
+    border-radius: 8px; font-weight: 600; background: transparent;
 }
 QListWidget#NavList::item:hover { background: #1f2937; color: #ffffff; }
 QListWidget#NavList::item:selected { background: #2563eb; color: #ffffff; }
 
-#PageTitle { font-size: 22px; font-weight: 700; color: #0f172a; }
-#PageSubtitle { color: #6b7280; font-size: 13px; }
+#PageTitle { font-size: 22px; font-weight: 700; color: #0f172a; background: transparent; }
+#PageSubtitle { color: #6b7280; font-size: 13px; background: transparent; }
 
 QFrame#Card {
     background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px;
 }
+QFrame#Card QLabel { background: transparent; }
+QLabel#FieldLabel { background: transparent; font-weight: 700; color: #0f172a; font-size: 13px; }
+QLabel#StatusDot { background: transparent; font-size: 18px; }
+QLabel#StatusText { background: transparent; color: #374151; font-weight: 600; }
 
 QPushButton {
     background: #2563eb; color: white; border: none;
@@ -97,8 +108,10 @@ QPushButton#Danger:hover { background: #b91c1c; }
 
 QLineEdit, QComboBox {
     background: #ffffff; border: 1px solid #d1d5db; border-radius: 8px;
-    padding: 8px 10px; selection-background-color: #2563eb;
+    padding: 8px 10px; min-height: 20px;
+    selection-background-color: #2563eb;
 }
+QComboBox::drop-down { border: none; width: 22px; }
 QLineEdit:focus, QComboBox:focus { border: 1px solid #2563eb; }
 
 QTableWidget {
@@ -107,13 +120,10 @@ QTableWidget {
     selection-color: #1e3a8a;
 }
 QHeaderView::section {
-    background: #f9fafb; color: #374151; padding: 10px; border: none;
+    background: #f9fafb; color: #374151; padding: 8px; border: none;
     border-bottom: 1px solid #e5e7eb; font-weight: 600;
 }
-QTableWidget::item { padding: 6px; }
-
-QLabel#StatusDot { font-size: 18px; }
-QLabel#StatusText { color: #6b7280; }
+QTableWidget::item { padding: 2px 6px; }
 
 QPlainTextEdit#Console {
     background: #0b1020; color: #d1d5db; border: 1px solid #1f2937;
@@ -121,11 +131,11 @@ QPlainTextEdit#Console {
     font-family: 'Consolas', 'Menlo', monospace; font-size: 12px;
 }
 
-QToolButton#RowMenu {
-    background: transparent; border: none; padding: 2px 6px;
-    color: #6b7280; font-size: 16px; font-weight: 700;
+QLabel#DragHandle {
+    background: transparent; color: #9ca3af; font-size: 16px;
+    font-weight: 700; padding: 0 8px;
 }
-QToolButton#RowMenu:hover { color: #2563eb; }
+QLabel#DragHandle:hover { color: #2563eb; }
 """
 
 
