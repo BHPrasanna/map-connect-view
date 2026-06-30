@@ -240,7 +240,7 @@ class MappingPage(QWidget):
         root.addWidget(sub)
 
         bar = QHBoxLayout(); bar.setSpacing(10)
-        self.import_btn = QPushButton("⬆  Import CSV")
+        self.import_btn = QPushButton("Import CSV")
         self.import_btn.clicked.connect(self.import_csv)
         self.add_btn = QPushButton("✎  + Add Parameter")
         self.add_btn.setObjectName("Secondary")
