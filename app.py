@@ -410,29 +410,37 @@ class ConnectionPage(QWidget):
         card = QFrame(); card.setObjectName("Card")
         cl = QVBoxLayout(card); cl.setContentsMargins(24, 24, 24, 24); cl.setSpacing(16)
 
+        def bold(text):
+            lbl = QLabel(text); lbl.setObjectName("FieldLabel"); return lbl
+
         proto_row = QFormLayout(); proto_row.setSpacing(12)
+        proto_row.setLabelAlignment(Qt.AlignLeft)
         self.proto_combo = QComboBox(); self.proto_combo.addItems(["Modbus TCP"])
         self.proto_combo.currentTextChanged.connect(self._rebuild_fields)
-        proto_row.addRow("Protocol", self.proto_combo)
+        self.proto_combo.setMaximumWidth(360)
+        proto_row.addRow(bold("Protocol"), self.proto_combo)
         cl.addLayout(proto_row)
 
         self.fields_form = QFormLayout(); self.fields_form.setSpacing(12)
+        self.fields_form.setLabelAlignment(Qt.AlignLeft)
         self.field_widgets = {}
         cl.addLayout(self.fields_form)
 
         # Polling rate
         poll_form = QFormLayout(); poll_form.setSpacing(12)
+        poll_form.setLabelAlignment(Qt.AlignLeft)
         self.poll_combo = QComboBox()
         for label, _ in self.POLL_RATES:
             self.poll_combo.addItem(label)
         self.poll_combo.setCurrentIndex(2)  # default 1 sec
+        self.poll_combo.setMaximumWidth(360)
         self.poll_combo.currentIndexChanged.connect(self._on_poll_changed)
-        poll_form.addRow("Polling Rate", self.poll_combo)
+        poll_form.addRow(bold("Polling Rate"), self.poll_combo)
         cl.addLayout(poll_form)
 
         bottom = QHBoxLayout()
         self.status_dot = QLabel("●"); self.status_dot.setObjectName("StatusDot")
-        self.status_dot.setStyleSheet("color:#9ca3af;")
+        self.status_dot.setStyleSheet("color:#9ca3af; background: transparent;")
         self.status_text = QLabel("Disconnected"); self.status_text.setObjectName("StatusText")
         bottom.addWidget(self.status_dot)
         bottom.addWidget(self.status_text)
@@ -452,21 +460,25 @@ class ConnectionPage(QWidget):
 
     def _on_poll_changed(self, _idx):
         self.log.emit("INFO", f"Polling rate set to {self.poll_combo.currentText()}")
-        # MainWindow listens via poll_combo signal? Easier: emit connected_changed with current state
         self.connected_changed.emit(self.store.connected)
 
     def _rebuild_fields(self, proto):
         while self.fields_form.rowCount():
             self.fields_form.removeRow(0)
         self.field_widgets.clear()
+
+        def bold(text):
+            lbl = QLabel(text); lbl.setObjectName("FieldLabel"); return lbl
+
         if proto == "Modbus TCP":
-            ip = QLineEdit("127.0.0.1")
-            port = QLineEdit("502")
-            unit = QLineEdit("1")
-            self.fields_form.addRow("IP Address", ip)
-            self.fields_form.addRow("Port", port)
-            self.fields_form.addRow("Unit ID", unit)
+            ip = QLineEdit("127.0.0.1"); ip.setMaximumWidth(360)
+            port = QLineEdit("502"); port.setMaximumWidth(360)
+            unit = QLineEdit("1"); unit.setMaximumWidth(360)
+            self.fields_form.addRow(bold("IP Address"), ip)
+            self.fields_form.addRow(bold("Port"), port)
+            self.fields_form.addRow(bold("Unit ID"), unit)
             self.field_widgets = {"ip": ip, "port": port, "unit": unit}
+
 
     def toggle_connect(self):
         if self.store.connected:
