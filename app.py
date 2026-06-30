@@ -863,7 +863,7 @@ class MainWindow(QMainWindow):
             self.logo_label.setPixmap(pm)
         else:
             self.logo_label.setText("◆")
-            self.logo_label.setStyleSheet("color:#ffffff; font-size:36px; background: transparent;")
+            self.logo_label.setStyleSheet("color:#2563eb; font-size:36px; background: transparent;")
         self.logo_label.setAlignment(Qt.AlignCenter)
         sl.addWidget(self.logo_label)
 
