@@ -682,8 +682,7 @@ class ParametersPage(QWidget):
         ps.insert(dst, p)
         self.refresh()
 
-            del self.store.parameters[idx]
-            self.refresh()
+
 
     def poll_values(self):
         if self.store.connected:
