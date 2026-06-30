@@ -880,8 +880,20 @@ class MainWindow(QMainWindow):
             QListWidgetItem(label, self.nav)
         sl.addWidget(self.nav, 1)
 
-        footer = QLabel("v1.1"); footer.setObjectName("Footer")
-        sl.addWidget(footer)
+        # Theme toggle + footer
+        footer_row = QHBoxLayout()
+        footer_row.setContentsMargins(16, 8, 16, 12)
+        footer = QLabel("v1.2"); footer.setObjectName("Footer")
+        footer.setContentsMargins(0, 0, 0, 0)
+        self.theme_btn = QToolButton()
+        self.theme_btn.setObjectName("ThemeToggle")
+        self.theme_btn.setText("🌙")
+        self.theme_btn.setToolTip("Switch to dark theme")
+        self.theme_btn.clicked.connect(self._toggle_theme)
+        footer_row.addWidget(footer)
+        footer_row.addStretch()
+        footer_row.addWidget(self.theme_btn)
+        sl.addLayout(footer_row)
 
         layout.addWidget(sidebar)
 
