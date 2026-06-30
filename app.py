@@ -810,11 +810,12 @@ class DebugConsolePage(QWidget):
 
     def append(self, direction: str, msg: str):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        color = {"TX": "#60a5fa", "RX": "#34d399", "ERR": "#f87171", "INFO": "#fbbf24"}.get(direction, "#d1d5db")
+        color = {"TX": "#2563eb", "RX": "#059669", "ERR": "#dc2626", "INFO": "#d97706"}.get(direction, "#6b7280")
+        # Message text inherits the console's current foreground so it works in both themes.
         self.console.appendHtml(
-            f'<span style="color:#6b7280;">[{ts}]</span> '
-            f'<span style="color:{color};font-weight:600;">{direction:<4}</span> '
-            f'<span style="color:#e5e7eb;">{msg}</span>'
+            f'<span style="color:#9ca3af;">[{ts}]</span> '
+            f'<span style="color:{color};font-weight:700;">{direction:<4}</span> '
+            f'<span>{msg}</span>'
         )
 
 
