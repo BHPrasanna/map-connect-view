@@ -424,16 +424,54 @@ class MappingPage(QWidget):
     def refresh(self):
         self._suspend = True
         self.table.setRowCount(len(self.store.parameters))
+        # Make delete column narrow
+        self.table.horizontalHeader().setSectionResizeMode(len(self.COLS) - 1, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         for r, p in enumerate(self.store.parameters):
-            vals = [str(r + 1), p.name, str(p.address), p.data_type, str(p.scaling), p.unit]
+            unit_display = "--" if p.is_status else p.unit
+            vals = [str(r + 1), p.name, str(p.address), "", str(p.scaling), unit_display, ""]
             for c, v in enumerate(vals):
                 item = QTableWidgetItem(v)
-                if c == 0:
+                if c in (0, 3, len(self.COLS) - 1):
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 if c != 1:
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(r, c, item)
+            # Data type dropdown
+            combo = QComboBox()
+            combo.addItems(self.DATA_TYPES)
+            combo.setCurrentText(p.data_type if p.data_type in self.DATA_TYPES else "u16")
+            combo.currentTextChanged.connect(lambda val, row=r: self._on_dtype_changed(row, val))
+            self.table.setCellWidget(r, 3, combo)
+            # Delete button
+            del_btn = QToolButton()
+            del_btn.setText("🗑")
+            del_btn.setToolTip("Delete this parameter")
+            del_btn.setCursor(Qt.PointingHandCursor)
+            del_btn.setStyleSheet(
+                "QToolButton{background:transparent;border:none;font-size:15px;color:#dc2626;}"
+                "QToolButton:hover{color:#991b1b;}"
+            )
+            del_btn.clicked.connect(lambda _=False, row=r: self._delete_row(row))
+            self.table.setCellWidget(r, len(self.COLS) - 1, del_btn)
         self._suspend = False
+
+    def _on_dtype_changed(self, row: int, val: str):
+        if self._suspend or not (0 <= row < len(self.store.parameters)):
+            return
+        self.store.parameters[row].data_type = val
+        self.mapping_changed.emit()
+
+    def _delete_row(self, row: int):
+        if not (0 <= row < len(self.store.parameters)):
+            return
+        p = self.store.parameters[row]
+        if QMessageBox.question(self, "Delete parameter",
+                                f"Delete '{p.name}' (address {p.address})?") != QMessageBox.Yes:
+            return
+        del self.store.parameters[row]
+        self.refresh()
+        self.mapping_changed.emit()
 
     def _on_item_changed(self, item: QTableWidgetItem):
         if self._suspend:
@@ -448,14 +486,15 @@ class MappingPage(QWidget):
                 p.name = text or p.name
             elif c == 2:
                 p.address = int(float(text))
-            elif c == 3:
-                if text.lower() not in ("u16", "u32", "s16"):
-                    raise ValueError("Data type must be u16, u32 or s16")
-                p.data_type = text.lower()
             elif c == 4:
                 p.scaling = float(text)
             elif c == 5:
-                p.unit = text
+                if text in ("", "--", "-"):
+                    p.unit = ""
+                    p.is_status = True
+                else:
+                    p.unit = text
+                    p.is_status = False
             self.mapping_changed.emit()
         except Exception as e:
             QMessageBox.warning(self, "Invalid value", str(e))
