@@ -49,7 +49,8 @@ class Parameter:
     data_type: str  # u16 / u32 / s16
     scaling: float
     unit: str
-    value: Optional[float] = None
+    value: Optional[object] = None
+    is_status: bool = False  # True -> value shown as YES/NO
 
 
 # ---------- Stylesheets -----------------------------------------------------
