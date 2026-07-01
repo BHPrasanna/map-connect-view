@@ -49,7 +49,8 @@ class Parameter:
     data_type: str  # u16 / u32 / s16
     scaling: float
     unit: str
-    value: Optional[float] = None
+    value: Optional[object] = None
+    is_status: bool = False  # True -> value shown as YES/NO
 
 
 # ---------- Stylesheets -----------------------------------------------------
@@ -291,7 +292,8 @@ class MappingPage(QWidget):
     csv_imported = pyqtSignal()
     mapping_changed = pyqtSignal()
 
-    COLS = ["S.No", "Parameter", "Address", "Data Type", "Scaling", "Unit"]
+    COLS = ["S.No", "Parameter", "Address", "Data Type", "Scaling", "Unit", ""]
+    DATA_TYPES = ["u16", "u32", "s16"]
 
     def __init__(self, store):
         super().__init__()
@@ -367,12 +369,23 @@ class MappingPage(QWidget):
                     name = col(row, "parameter", "parameter name", "name").strip()
                     if not name:
                         continue
+                    dt = (col(row, "data_type", "type", "datatype") or "").strip().lower()
+                    if dt not in ("u16", "u32", "s16"):
+                        dt = "u16"
+                    raw_unit = col(row, "unit").strip()
+                    is_status = raw_unit in ("", "--", "-", "N/A", "n/a")
+                    unit = "" if is_status else raw_unit
+                    try:
+                        scaling = float(col(row, "scaling", "scaling factor") or 1)
+                    except ValueError:
+                        scaling = 1.0
                     params.append(Parameter(
                         address=int(float(col(row, "address"))),
                         name=name,
-                        data_type=(col(row, "data_type", "type", "datatype") or "u16").strip().lower(),
-                        scaling=float(col(row, "scaling", "scaling factor") or 1),
-                        unit=col(row, "unit").strip(),
+                        data_type=dt,
+                        scaling=scaling,
+                        unit=unit,
+                        is_status=is_status,
                     ))
             if not params:
                 raise ValueError("No valid rows found.")
@@ -411,16 +424,54 @@ class MappingPage(QWidget):
     def refresh(self):
         self._suspend = True
         self.table.setRowCount(len(self.store.parameters))
+        # Make delete column narrow
+        self.table.horizontalHeader().setSectionResizeMode(len(self.COLS) - 1, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         for r, p in enumerate(self.store.parameters):
-            vals = [str(r + 1), p.name, str(p.address), p.data_type, str(p.scaling), p.unit]
+            unit_display = "--" if p.is_status else p.unit
+            vals = [str(r + 1), p.name, str(p.address), "", str(p.scaling), unit_display, ""]
             for c, v in enumerate(vals):
                 item = QTableWidgetItem(v)
-                if c == 0:
+                if c in (0, 3, len(self.COLS) - 1):
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 if c != 1:
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(r, c, item)
+            # Data type dropdown
+            combo = QComboBox()
+            combo.addItems(self.DATA_TYPES)
+            combo.setCurrentText(p.data_type if p.data_type in self.DATA_TYPES else "u16")
+            combo.currentTextChanged.connect(lambda val, row=r: self._on_dtype_changed(row, val))
+            self.table.setCellWidget(r, 3, combo)
+            # Delete button
+            del_btn = QToolButton()
+            del_btn.setText("🗑")
+            del_btn.setToolTip("Delete this parameter")
+            del_btn.setCursor(Qt.PointingHandCursor)
+            del_btn.setStyleSheet(
+                "QToolButton{background:transparent;border:none;font-size:15px;color:#dc2626;}"
+                "QToolButton:hover{color:#991b1b;}"
+            )
+            del_btn.clicked.connect(lambda _=False, row=r: self._delete_row(row))
+            self.table.setCellWidget(r, len(self.COLS) - 1, del_btn)
         self._suspend = False
+
+    def _on_dtype_changed(self, row: int, val: str):
+        if self._suspend or not (0 <= row < len(self.store.parameters)):
+            return
+        self.store.parameters[row].data_type = val
+        self.mapping_changed.emit()
+
+    def _delete_row(self, row: int):
+        if not (0 <= row < len(self.store.parameters)):
+            return
+        p = self.store.parameters[row]
+        if QMessageBox.question(self, "Delete parameter",
+                                f"Delete '{p.name}' (address {p.address})?") != QMessageBox.Yes:
+            return
+        del self.store.parameters[row]
+        self.refresh()
+        self.mapping_changed.emit()
 
     def _on_item_changed(self, item: QTableWidgetItem):
         if self._suspend:
@@ -435,14 +486,15 @@ class MappingPage(QWidget):
                 p.name = text or p.name
             elif c == 2:
                 p.address = int(float(text))
-            elif c == 3:
-                if text.lower() not in ("u16", "u32", "s16"):
-                    raise ValueError("Data type must be u16, u32 or s16")
-                p.data_type = text.lower()
             elif c == 4:
                 p.scaling = float(text)
             elif c == 5:
-                p.unit = text
+                if text in ("", "--", "-"):
+                    p.unit = ""
+                    p.is_status = True
+                else:
+                    p.unit = text
+                    p.is_status = False
             self.mapping_changed.emit()
         except Exception as e:
             QMessageBox.warning(self, "Invalid value", str(e))
@@ -498,7 +550,7 @@ class ConnectionPage(QWidget):
         self.form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         self.form.setHorizontalSpacing(20)
 
-        self.proto_combo = QComboBox(); self.proto_combo.addItems(["Modbus TCP"])
+        self.proto_combo = QComboBox(); self.proto_combo.addItems(["Modbus TCP", "Modbus RTU", "Modbus ASCII"])
         self.proto_combo.currentTextChanged.connect(self._rebuild_fields)
         self.proto_combo.setMinimumWidth(360)
         self.proto_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -546,23 +598,52 @@ class ConnectionPage(QWidget):
 
     def _rebuild_fields(self, proto):
         # Remove existing dynamic rows (everything between Protocol row and Polling Rate row)
-        # Strategy: clear all rows after index 0, then re-append dynamic fields + polling row
         while self.form.rowCount() > 1:
             self.form.removeRow(1)
         self.field_widgets.clear()
         bold = self._dynamic_label
 
+        def _mk_line(default=""):
+            w = QLineEdit(default)
+            w.setMinimumWidth(360)
+            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            return w
+
+        def _mk_combo(items, default=None):
+            w = QComboBox()
+            w.addItems([str(i) for i in items])
+            if default is not None:
+                w.setCurrentText(str(default))
+            w.setMinimumWidth(360)
+            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            return w
+
         if proto == "Modbus TCP":
-            ip = QLineEdit("127.0.0.1")
-            port = QLineEdit("502")
-            unit = QLineEdit("1")
-            for w in (ip, port, unit):
-                w.setMinimumWidth(360)
-                w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            ip = _mk_line("127.0.0.1")
+            port = _mk_line("502")
+            unit = _mk_line("1")
             self.form.addRow(bold("IP Address"), ip)
             self.form.addRow(bold("Port"), port)
             self.form.addRow(bold("Unit ID"), unit)
             self.field_widgets = {"ip": ip, "port": port, "unit": unit}
+
+        elif proto in ("Modbus RTU", "Modbus ASCII"):
+            com = _mk_line("COM1" if sys.platform.startswith("win") else "/dev/ttyUSB0")
+            baud = _mk_combo([9600, 19200, 38400, 57600, 115200], default=9600)
+            parity = _mk_combo(["None", "Even", "Odd"], default="None")
+            databits = _mk_combo([7, 8], default=(7 if proto == "Modbus ASCII" else 8))
+            stopbits = _mk_combo([1, 2], default=1)
+            unit = _mk_line("1")
+            self.form.addRow(bold("Serial Port"), com)
+            self.form.addRow(bold("Baud Rate"), baud)
+            self.form.addRow(bold("Parity"), parity)
+            self.form.addRow(bold("Data Bits"), databits)
+            self.form.addRow(bold("Stop Bits"), stopbits)
+            self.form.addRow(bold("Unit ID"), unit)
+            self.field_widgets = {
+                "com": com, "baud": baud, "parity": parity,
+                "databits": databits, "stopbits": stopbits, "unit": unit,
+            }
 
         self.form.addRow(bold("Polling Rate"), self.poll_combo)
 
@@ -572,31 +653,66 @@ class ConnectionPage(QWidget):
             self._disconnect()
             return
 
-        ip = self.field_widgets["ip"].text().strip()
+        proto = self.proto_combo.currentText()
         try:
-            port = int(self.field_widgets["port"].text().strip())
             unit = int(self.field_widgets["unit"].text().strip())
-        except ValueError:
-            QMessageBox.warning(self, "Invalid", "Port and Unit ID must be integers.")
+        except (ValueError, KeyError):
+            QMessageBox.warning(self, "Invalid", "Unit ID must be an integer.")
             return
 
-        self.log.emit("INFO", f"Connecting to {ip}:{port} (unit {unit})...")
-        if HAS_PYMODBUS:
+        if proto == "Modbus TCP":
+            ip = self.field_widgets["ip"].text().strip()
             try:
-                self.client = ModbusTcpClient(ip, port=port)
-                ok = self.client.connect()
-                if not ok:
-                    raise ConnectionError("Could not reach device.")
-                self.store.unit_id = unit
-            except Exception as e:
-                QMessageBox.critical(self, "Connection failed", str(e))
-                self.log.emit("ERR", f"Connection failed: {e}")
-                self.client = None
+                port = int(self.field_widgets["port"].text().strip())
+            except ValueError:
+                QMessageBox.warning(self, "Invalid", "Port must be an integer.")
                 return
+            self.log.emit("INFO", f"[TCP] Connecting to {ip}:{port} (unit {unit})...")
+            if HAS_PYMODBUS:
+                try:
+                    self.client = ModbusTcpClient(ip, port=port)
+                    if not self.client.connect():
+                        raise ConnectionError("Could not reach device.")
+                except Exception as e:
+                    QMessageBox.critical(self, "Connection failed", str(e))
+                    self.log.emit("ERR", f"Connection failed: {e}")
+                    self.client = None
+                    return
+            else:
+                self.client = "SIMULATED"
+                self.log.emit("INFO", "pymodbus not installed - SIMULATED mode")
         else:
-            self.client = "SIMULATED"
-            self.log.emit("INFO", "pymodbus not installed — running in SIMULATED mode")
+            com = self.field_widgets["com"].text().strip()
+            baud = int(self.field_widgets["baud"].currentText())
+            parity_map = {"None": "N", "Even": "E", "Odd": "O"}
+            parity = parity_map[self.field_widgets["parity"].currentText()]
+            databits = int(self.field_widgets["databits"].currentText())
+            stopbits = int(self.field_widgets["stopbits"].currentText())
+            framer = "ascii" if proto == "Modbus ASCII" else "rtu"
+            self.log.emit(
+                "INFO",
+                f"[{framer.upper()}] Connecting {com} @ {baud} {databits}{parity}{stopbits} (unit {unit})..."
+            )
+            if HAS_PYMODBUS:
+                try:
+                    from pymodbus.client import ModbusSerialClient
+                    self.client = ModbusSerialClient(
+                        port=com, baudrate=baud, parity=parity,
+                        bytesize=databits, stopbits=stopbits,
+                        framer=framer, timeout=1,
+                    )
+                    if not self.client.connect():
+                        raise ConnectionError(f"Could not open {com}.")
+                except Exception as e:
+                    QMessageBox.critical(self, "Connection failed", str(e))
+                    self.log.emit("ERR", f"Connection failed: {e}")
+                    self.client = None
+                    return
+            else:
+                self.client = "SIMULATED"
+                self.log.emit("INFO", "pymodbus not installed - SIMULATED mode")
 
+        self.store.unit_id = unit
         self.store.connected = True
         self._set_status(True)
         self.connect_btn.setText("Disconnect")
@@ -625,7 +741,7 @@ class ConnectionPage(QWidget):
     def _set_status(self, ok: bool):
         if ok:
             self.status_dot.setStyleSheet("color:#16a34a;")
-            mode = "" if HAS_PYMODBUS else "  (simulated — install pymodbus for live data)"
+            mode = "" if HAS_PYMODBUS else "  (simulated - install pymodbus for live data)"
             self.status_text.setText(f"Connected{mode}")
         else:
             self.status_dot.setStyleSheet("color:#9ca3af;")
@@ -640,13 +756,16 @@ class ConnectionPage(QWidget):
             import random
             raw = random.randint(0, 1000)
             self.log.emit("TX", f"READ addr={p.address} count={count} unit={self.store.unit_id}")
-            value = round(raw * p.scaling, 3)
+            if p.is_status:
+                value = "YES" if raw % 2 else "NO"
+            else:
+                value = round(raw * p.scaling, 3)
             self.log.emit("RX", f"addr={p.address} raw={raw} value={value}{(' '+p.unit) if p.unit else ''}")
             return value
 
         try:
             self.log.emit("TX", f"READ addr={p.address} count={count} unit={self.store.unit_id}")
-            rr = self.client.read_holding_registers(p.address, count=count)
+            rr = self.client.read_holding_registers(p.address, count=count, slave=self.store.unit_id)
             if rr.isError():
                 self.log.emit("ERR", f"addr={p.address} -> {rr}")
                 return None
@@ -656,12 +775,16 @@ class ConnectionPage(QWidget):
                 raw = rr.registers[0]
             if p.data_type == "s16" and raw >= 32768:
                 raw -= 65536
-            value = round(raw * p.scaling, 3)
+            if p.is_status:
+                value = "YES" if raw != 0 else "NO"
+            else:
+                value = round(raw * p.scaling, 3)
             self.log.emit("RX", f"addr={p.address} regs={rr.registers} value={value}{(' '+p.unit) if p.unit else ''}")
             return value
         except Exception as e:
             self.log.emit("ERR", f"addr={p.address} crash: {e}")
             return None
+
 
 # ---------- Parameters page -------------------------------------------------
 class ReorderTable(QTableWidget):
@@ -810,13 +933,7 @@ class DebugConsolePage(QWidget):
 
     def append(self, direction: str, msg: str):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        color = {"TX": "#2563eb", "RX": "#059669", "ERR": "#dc2626", "INFO": "#d97706"}.get(direction, "#6b7280")
-        # Message text inherits the console's current foreground so it works in both themes.
-        self.console.appendHtml(
-            f'<span style="color:#9ca3af;">[{ts}]</span> '
-            f'<span style="color:{color};font-weight:700;">{direction:<4}</span> '
-            f'<span>{msg}</span>'
-        )
+        self.console.appendPlainText(f"[{ts}] {direction:<4} {msg}")
 
 
 # ---------- Shared state ----------------------------------------------------
