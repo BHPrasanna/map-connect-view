@@ -292,7 +292,8 @@ class MappingPage(QWidget):
     csv_imported = pyqtSignal()
     mapping_changed = pyqtSignal()
 
-    COLS = ["S.No", "Parameter", "Address", "Data Type", "Scaling", "Unit"]
+    COLS = ["S.No", "Parameter", "Address", "Data Type", "Scaling", "Unit", ""]
+    DATA_TYPES = ["u16", "u32", "s16"]
 
     def __init__(self, store):
         super().__init__()
@@ -368,12 +369,23 @@ class MappingPage(QWidget):
                     name = col(row, "parameter", "parameter name", "name").strip()
                     if not name:
                         continue
+                    dt = (col(row, "data_type", "type", "datatype") or "").strip().lower()
+                    if dt not in ("u16", "u32", "s16"):
+                        dt = "u16"
+                    raw_unit = col(row, "unit").strip()
+                    is_status = raw_unit in ("", "--", "-", "N/A", "n/a")
+                    unit = "" if is_status else raw_unit
+                    try:
+                        scaling = float(col(row, "scaling", "scaling factor") or 1)
+                    except ValueError:
+                        scaling = 1.0
                     params.append(Parameter(
                         address=int(float(col(row, "address"))),
                         name=name,
-                        data_type=(col(row, "data_type", "type", "datatype") or "u16").strip().lower(),
-                        scaling=float(col(row, "scaling", "scaling factor") or 1),
-                        unit=col(row, "unit").strip(),
+                        data_type=dt,
+                        scaling=scaling,
+                        unit=unit,
+                        is_status=is_status,
                     ))
             if not params:
                 raise ValueError("No valid rows found.")
