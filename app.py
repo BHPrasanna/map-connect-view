@@ -534,15 +534,11 @@ class ConnectionPage(QWidget):
         self.field_widgets = {}
         self._dynamic_label = bold
 
-        self.poll_combo = QComboBox()
-        for label, _ in self.POLL_RATES:
-            self.poll_combo.addItem(label)
-        self.poll_combo.setCurrentIndex(2)
-        self.poll_combo.setMinimumWidth(360)
-        self.poll_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.poll_combo.currentIndexChanged.connect(self._on_poll_changed)
+        self._poll_index = 2  # remembered across rebuilds
+        self.poll_combo = None
 
         cl.addLayout(self.form)
+
 
         bottom = QHBoxLayout()
         self.status_dot = QLabel("●"); self.status_dot.setObjectName("StatusDot")
