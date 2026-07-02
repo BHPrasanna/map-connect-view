@@ -744,7 +744,23 @@ class ConnectionPage(QWidget):
             self.log.emit("RX", hexify(rx))
         else:
             try:
-                rr = self.client.read_holding_registers(p.address, count=count, slave=unit)
+                # Handle pymodbus API differences across versions.
+                rr = None
+                last_err = None
+                for kwargs in (
+                    {"count": count, "slave": unit},   # pymodbus 3.x
+                    {"count": count, "unit": unit},    # pymodbus 2.x
+                    {"count": count, "device_id": unit},  # pymodbus 3.7+
+                ):
+                    try:
+                        rr = self.client.read_holding_registers(p.address, **kwargs)
+                        last_err = None
+                        break
+                    except TypeError as te:
+                        last_err = te
+                        continue
+                if rr is None:
+                    raise last_err or RuntimeError("read failed")
                 if rr.isError():
                     self.log.emit("ERR", f"addr={p.address} -> {rr}")
                     return None
@@ -758,6 +774,7 @@ class ConnectionPage(QWidget):
             except Exception as e:
                 self.log.emit("ERR", f"addr={p.address} crash: {e}")
                 return None
+
 
         if self.client == "SIMULATED" or not HAS_PYMODBUS:
             if count == 2:
