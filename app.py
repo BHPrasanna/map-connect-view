@@ -584,10 +584,13 @@ class ConnectionPage(QWidget):
         return w
 
     def _rebuild_fields(self, proto):
-        # Clear all rows after Protocol
+        # Remember polling selection, then clear all rows after Protocol.
+        if self.poll_combo is not None:
+            self._poll_index = self.poll_combo.currentIndex()
         while self.form.rowCount() > 1:
             self.form.removeRow(1)
         self.field_widgets.clear()
+        self.poll_combo = None  # was destroyed by removeRow above
         bold = self._dynamic_label
 
         if proto == "Modbus TCP":
@@ -613,7 +616,16 @@ class ConnectionPage(QWidget):
             self.form.addRow(bold("Stop Bits"), self.field_widgets["stopbits"])
             self.form.addRow(bold("Device ID"), self.field_widgets["unit"])
 
+        # Recreate the polling combo fresh each rebuild.
+        self.poll_combo = QComboBox()
+        for label, _ in self.POLL_RATES:
+            self.poll_combo.addItem(label)
+        self.poll_combo.setCurrentIndex(self._poll_index)
+        self.poll_combo.setMinimumWidth(360)
+        self.poll_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.poll_combo.currentIndexChanged.connect(self._on_poll_changed)
         self.form.addRow(bold("Polling Rate"), self.poll_combo)
+
 
     def toggle_connect(self):
         if self.store.connected:
