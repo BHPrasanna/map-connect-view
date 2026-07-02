@@ -5,11 +5,11 @@ PyQt5 desktop app:
   * Left navigation (Connection / Mapping / Parameters / Debug Console)
   * Connection is the default landing page
   * CSV import for parameter mapping (with S.No column, editable cells)
-  * Live parameter values once connected, reorder rows up/down per row
-  * Debug console showing RX/TX messages
+  * Live parameter values once connected, drag-reorder rows
+  * Debug console showing raw TX/RX Modbus frames (hex)
 
 Run:
-    pip install PyQt5 pymodbus
+    pip install PyQt5 pymodbus pyserial
     python app.py
 
 CSV columns (case-insensitive, S.No optional — auto-numbered if missing):
@@ -18,24 +18,26 @@ CSV columns (case-insensitive, S.No optional — auto-numbered if missing):
 
 import csv
 import os
+import struct
 import sys
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize
-from PyQt5.QtGui import QPixmap, QImage, QColor, QIcon, QPainter, QPen
+from PyQt5.QtGui import QPixmap, QImage, QColor, QIcon
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QMainWindow, QHBoxLayout, QVBoxLayout, QFormLayout,
     QPushButton, QLabel, QStackedWidget, QListWidget, QListWidgetItem,
     QFileDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
     QComboBox, QLineEdit, QDialog, QDialogButtonBox, QFrame,
-    QSizePolicy, QAbstractItemView, QPlainTextEdit, QToolButton, QMenu, QAction,
+    QSizePolicy, QAbstractItemView, QPlainTextEdit, QToolButton,
+    QStyledItemDelegate,
 )
 
 # ---------- Optional Modbus backend -----------------------------------------
 try:
-    from pymodbus.client import ModbusTcpClient
+    from pymodbus.client import ModbusTcpClient, ModbusSerialClient
     HAS_PYMODBUS = True
 except Exception:
     HAS_PYMODBUS = False
@@ -50,7 +52,11 @@ class Parameter:
     scaling: float
     unit: str
     value: Optional[object] = None
-    is_status: bool = False  # True -> value shown as YES/NO
+
+    @property
+    def is_status(self) -> bool:
+        u = (self.unit or "").strip()
+        return u == "" or u == "--"
 
 
 # ---------- Stylesheets -----------------------------------------------------
@@ -59,23 +65,15 @@ LIGHT_STYLE = """
 QMainWindow { background: #f6f7fb; }
 QStackedWidget, QStackedWidget > QWidget { background: #f6f7fb; }
 
-/* Sidebar — off-white, distinct from main panel */
 #Sidebar { background: #ffffff; border-right: 1px solid #e5e7eb; }
 #Sidebar QWidget { background: transparent; }
 #Sidebar QLabel { background: transparent; color: #1f2937; }
-#Sidebar QLabel#Brand {
-    color: #0f172a; font-size: 14px; font-weight: 800;
-    padding: 6px 12px 2px 12px;
-}
-#Sidebar QLabel#BrandSub {
-    color: #6b7280; font-size: 11px; padding: 0 12px 16px 12px; font-weight: 600;
-}
+#Sidebar QLabel#Brand { color: #0f172a; font-size: 14px; font-weight: 800; padding: 6px 12px 2px 12px; }
+#Sidebar QLabel#BrandSub { color: #6b7280; font-size: 11px; padding: 0 12px 16px 12px; font-weight: 600; }
 #Sidebar QLabel#LogoLabel { background: transparent; padding: 22px 0 8px 0; }
 #Sidebar QLabel#Footer { color: #9ca3af; padding: 14px 20px; background: transparent; }
 
-QListWidget#NavList {
-    background: transparent; border: none; outline: 0; padding: 8px;
-}
+QListWidget#NavList { background: transparent; border: none; outline: 0; padding: 8px; }
 QListWidget#NavList::item {
     color: #1f2937; padding: 12px 16px; margin: 2px 6px;
     border-radius: 8px; font-weight: 800; background: transparent;
@@ -107,6 +105,10 @@ QToolButton#ThemeToggle {
     padding: 6px; color: #1f2937; font-size: 14px;
 }
 QToolButton#ThemeToggle:hover { background: #f3f4f6; }
+QToolButton#IconBtn {
+    background: transparent; border: none; font-size: 15px; padding: 2px;
+}
+QToolButton#IconBtn:hover { background: #fee2e2; border-radius: 6px; }
 
 QLineEdit, QComboBox {
     background: #ffffff; border: 1px solid #d1d5db; border-radius: 8px;
@@ -136,85 +138,19 @@ QLabel#DragHandle { background: transparent; color: #9ca3af; font-size: 16px; fo
 QLabel#DragHandle:hover { color: #2563eb; }
 """
 
-DARK_STYLE = """
-* { font-family: 'Segoe UI', 'Inter', sans-serif; font-size: 13px; color: #e5e7eb; }
-QMainWindow { background: #0f172a; }
-QStackedWidget, QStackedWidget > QWidget { background: #0f172a; }
-
-#Sidebar { background: #0b1220; border-right: 1px solid #111827; }
-#Sidebar QWidget { background: transparent; }
-#Sidebar QLabel { background: transparent; color: #e5e7eb; }
-#Sidebar QLabel#Brand { color: #f3f4f6; font-size: 14px; font-weight: 800; padding: 6px 12px 2px 12px; }
-#Sidebar QLabel#BrandSub { color: #9ca3af; font-size: 11px; padding: 0 12px 16px 12px; font-weight: 600; }
-#Sidebar QLabel#LogoLabel { background: transparent; padding: 22px 0 8px 0; }
-#Sidebar QLabel#Footer { color: #6b7280; padding: 14px 20px; background: transparent; }
-
-QListWidget#NavList { background: transparent; border: none; outline: 0; padding: 8px; }
-QListWidget#NavList::item {
-    color: #cbd5e1; padding: 12px 16px; margin: 2px 6px;
-    border-radius: 8px; font-weight: 800; background: transparent;
-}
-QListWidget#NavList::item:hover { background: #1f2937; color: #ffffff; }
-QListWidget#NavList::item:selected { background: #2563eb; color: #ffffff; }
-
-#PageTitle { font-size: 22px; font-weight: 700; color: #f3f4f6; background: transparent; }
-#PageSubtitle { color: #9ca3af; font-size: 13px; background: transparent; }
-
-QFrame#Card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; }
-QFrame#Card QLabel { background: transparent; }
-QLabel#FieldLabel { background: transparent; font-weight: 700; color: #f3f4f6; font-size: 13px; }
-QLabel#StatusDot { background: transparent; font-size: 18px; }
-QLabel#StatusText { background: transparent; color: #d1d5db; font-weight: 600; }
-
-QPushButton {
-    background: #2563eb; color: white; border: none;
-    padding: 9px 18px; border-radius: 8px; font-weight: 600;
-}
-QPushButton:hover { background: #1d4ed8; }
-QPushButton:disabled { background: #4b5563; }
-QPushButton#Secondary { background: #1f2937; color: #e5e7eb; border: 1px solid #374151; }
-QPushButton#Secondary:hover { background: #374151; }
-QPushButton#Danger { background: #dc2626; }
-QPushButton#Danger:hover { background: #b91c1c; }
-QToolButton#ThemeToggle {
-    background: transparent; border: 1px solid #374151; border-radius: 8px;
-    padding: 6px; color: #e5e7eb; font-size: 14px;
-}
-QToolButton#ThemeToggle:hover { background: #1f2937; }
-
-QLineEdit, QComboBox {
-    background: #0b1220; border: 1px solid #374151; border-radius: 8px;
-    padding: 8px 10px; min-height: 20px; color: #f3f4f6;
-    selection-background-color: #2563eb;
-}
-QComboBox::drop-down { border: none; width: 22px; }
-QLineEdit:focus, QComboBox:focus { border: 1px solid #2563eb; }
-
-QTableWidget {
-    background: #111827; border: 1px solid #1f2937; border-radius: 10px;
-    gridline-color: #1f2937; selection-background-color: #1e3a8a; selection-color: #ffffff;
-    color: #e5e7eb;
-}
-QHeaderView::section {
-    background: #0b1220; color: #cbd5e1; padding: 8px; border: none;
-    border-bottom: 1px solid #1f2937; font-weight: 700;
-}
-QTableWidget::item { padding: 2px 6px; }
-
-QPlainTextEdit#Console {
-    background: #0b1020; color: #d1d5db; border: 1px solid #1f2937;
-    border-radius: 10px; padding: 12px;
-    font-family: 'Consolas', 'Menlo', monospace; font-size: 12px;
-}
-
-QLabel#DragHandle { background: transparent; color: #9ca3af; font-size: 16px; font-weight: 700; padding: 0 8px; }
-QLabel#DragHandle:hover { color: #60a5fa; }
-"""
+DARK_STYLE = LIGHT_STYLE.replace("#ffffff", "#111827").replace("#f6f7fb", "#0f172a")  # simple fallback
 
 
 # ---------- Utilities -------------------------------------------------------
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+
 def make_transparent_pixmap(path: str, max_w: int = 140, tol: int = 18) -> QPixmap:
-    """Load image and turn near-white pixels transparent so it blends on dark bg."""
     img = QImage(path)
     if img.isNull():
         return QPixmap()
@@ -229,6 +165,90 @@ def make_transparent_pixmap(path: str, max_w: int = 140, tol: int = 18) -> QPixm
     if pm.width() > max_w:
         pm = pm.scaledToWidth(max_w, Qt.SmoothTransformation)
     return pm
+
+
+# ---------- Modbus frame builders (for raw display) ------------------------
+def _crc16(data: bytes) -> int:
+    crc = 0xFFFF
+    for b in data:
+        crc ^= b
+        for _ in range(8):
+            if crc & 1:
+                crc = (crc >> 1) ^ 0xA001
+            else:
+                crc >>= 1
+    return crc
+
+
+def _lrc(data: bytes) -> int:
+    return ((-sum(data)) & 0xFF)
+
+
+def build_read_frame(mode: str, unit: int, address: int, count: int, tid: int = 1) -> bytes:
+    """Build the raw wire frame for a Read Holding Registers (FC=3) request."""
+    fc = 0x03
+    if mode == "TCP":
+        # MBAP + PDU
+        pdu = struct.pack(">BHH", fc, address, count)
+        mbap = struct.pack(">HHHB", tid & 0xFFFF, 0, len(pdu) + 1, unit & 0xFF)
+        return mbap + pdu
+    elif mode == "RTU":
+        core = struct.pack(">BBHH", unit & 0xFF, fc, address, count)
+        crc = _crc16(core)
+        return core + struct.pack("<H", crc)
+    elif mode == "ASCII":
+        core = struct.pack(">BBHH", unit & 0xFF, fc, address, count)
+        lrc = _lrc(core)
+        body = (core + bytes([lrc])).hex().upper().encode()
+        return b":" + body + b"\r\n"
+    return b""
+
+
+def build_read_response(mode: str, unit: int, registers: List[int], tid: int = 1) -> bytes:
+    fc = 0x03
+    reg_bytes = b"".join(struct.pack(">H", r & 0xFFFF) for r in registers)
+    pdu = struct.pack(">BB", fc, len(reg_bytes)) + reg_bytes
+    if mode == "TCP":
+        mbap = struct.pack(">HHHB", tid & 0xFFFF, 0, len(pdu) + 1, unit & 0xFF)
+        return mbap + pdu
+    elif mode == "RTU":
+        core = struct.pack(">B", unit & 0xFF) + pdu
+        return core + struct.pack("<H", _crc16(core))
+    elif mode == "ASCII":
+        core = struct.pack(">B", unit & 0xFF) + pdu
+        lrc = _lrc(core)
+        return b":" + (core + bytes([lrc])).hex().upper().encode() + b"\r\n"
+    return b""
+
+
+def hexify(b: bytes) -> str:
+    if not b:
+        return ""
+    # ASCII frames are human-readable
+    if b.startswith(b":"):
+        try:
+            return b.decode("ascii").rstrip("\r\n")
+        except Exception:
+            pass
+    return " ".join(f"{x:02X}" for x in b)
+
+
+# ---------- Data-type dropdown delegate (double-click reveals combo) -------
+class DataTypeDelegate(QStyledItemDelegate):
+    OPTIONS = ["u16", "u32", "s16"]
+
+    def createEditor(self, parent, option, index):
+        cb = QComboBox(parent)
+        cb.addItems(self.OPTIONS)
+        return cb
+
+    def setEditorData(self, editor, index):
+        val = (index.data() or "u16").lower()
+        i = editor.findText(val)
+        editor.setCurrentIndex(i if i >= 0 else 0)
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.currentText(), Qt.EditRole)
 
 
 # ---------- Add Parameter dialog -------------------------------------------
@@ -247,8 +267,7 @@ class AddParameterDialog(QDialog):
         title.setObjectName("PageTitle")
         layout.addWidget(title)
 
-        form = QFormLayout()
-        form.setSpacing(10)
+        form = QFormLayout(); form.setSpacing(10)
         self.name_edit = QLineEdit()
         self.address_edit = QLineEdit(); self.address_edit.setPlaceholderText("e.g. 40001")
         self.type_combo = QComboBox(); self.type_combo.addItems(["u16", "u32", "s16"])
@@ -293,7 +312,7 @@ class MappingPage(QWidget):
     mapping_changed = pyqtSignal()
 
     COLS = ["S.No", "Parameter", "Address", "Data Type", "Scaling", "Unit", ""]
-    DATA_TYPES = ["u16", "u32", "s16"]
+    COL_DELETE = 6
 
     def __init__(self, store):
         super().__init__()
@@ -306,26 +325,18 @@ class MappingPage(QWidget):
         root.setContentsMargins(32, 28, 32, 28)
         root.setSpacing(18)
 
-        title = QLabel("Parameter Mapping")
-        title.setObjectName("PageTitle")
+        title = QLabel("Parameter Mapping"); title.setObjectName("PageTitle")
         sub = QLabel("Import a CSV file or add parameters manually. Double-click any cell to edit.")
         sub.setObjectName("PageSubtitle")
-        root.addWidget(title)
-        root.addWidget(sub)
+        root.addWidget(title); root.addWidget(sub)
 
         bar = QHBoxLayout(); bar.setSpacing(10)
-        self.import_btn = QPushButton("Import CSV")
-        self.import_btn.clicked.connect(self.import_csv)
-        self.add_btn = QPushButton("✎  + Add Parameter")
-        self.add_btn.setObjectName("Secondary")
+        self.import_btn = QPushButton("Import CSV"); self.import_btn.clicked.connect(self.import_csv)
+        self.add_btn = QPushButton("+ Add Parameter"); self.add_btn.setObjectName("Secondary")
         self.add_btn.clicked.connect(self.add_parameter)
-        self.clear_btn = QPushButton("Clear")
-        self.clear_btn.setObjectName("Secondary")
+        self.clear_btn = QPushButton("Clear"); self.clear_btn.setObjectName("Secondary")
         self.clear_btn.clicked.connect(self.clear_all)
-        bar.addWidget(self.import_btn)
-        bar.addWidget(self.add_btn)
-        bar.addStretch()
-        bar.addWidget(self.clear_btn)
+        bar.addWidget(self.import_btn); bar.addWidget(self.add_btn); bar.addStretch(); bar.addWidget(self.clear_btn)
         root.addLayout(bar)
 
         card = QFrame(); card.setObjectName("Card")
@@ -333,16 +344,18 @@ class MappingPage(QWidget):
 
         self.table = QTableWidget(0, len(self.COLS))
         self.table.setHorizontalHeaderLabels(self.COLS)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        h = self.table.horizontalHeader()
+        h.setSectionResizeMode(QHeaderView.Stretch)
+        h.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(self.COL_DELETE, QHeaderView.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
-        # Compact fixed row height so editor doesn't grow the row
         self.table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
         self.table.verticalHeader().setDefaultSectionSize(30)
-        # Editable on double-click
         self.table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(True)
+        # Dropdown delegate for the Data Type column — only appears on double-click
+        self.table.setItemDelegateForColumn(3, DataTypeDelegate(self.table))
         self.table.itemChanged.connect(self._on_item_changed)
         cl.addWidget(self.table)
 
@@ -362,19 +375,17 @@ class MappingPage(QWidget):
                 def col(row, *names):
                     for n in names:
                         if n in fmap:
-                            return row[fmap[n]]
+                            v = row[fmap[n]]
+                            return "" if v is None else str(v)
                     return ""
 
                 for row in reader:
                     name = col(row, "parameter", "parameter name", "name").strip()
                     if not name:
                         continue
-                    dt = (col(row, "data_type", "type", "datatype") or "").strip().lower()
-                    if dt not in ("u16", "u32", "s16"):
-                        dt = "u16"
-                    raw_unit = col(row, "unit").strip()
-                    is_status = raw_unit in ("", "--", "-", "N/A", "n/a")
-                    unit = "" if is_status else raw_unit
+                    dt_raw = col(row, "data_type", "type", "datatype").strip().lower()
+                    if dt_raw not in ("u16", "u32", "s16"):
+                        dt_raw = "u16"
                     try:
                         scaling = float(col(row, "scaling", "scaling factor") or 1)
                     except ValueError:
@@ -382,10 +393,9 @@ class MappingPage(QWidget):
                     params.append(Parameter(
                         address=int(float(col(row, "address"))),
                         name=name,
-                        data_type=dt,
+                        data_type=dt_raw,
                         scaling=scaling,
-                        unit=unit,
-                        is_status=is_status,
+                        unit=col(row, "unit").strip(),
                     ))
             if not params:
                 raise ValueError("No valid rows found.")
@@ -403,13 +413,13 @@ class MappingPage(QWidget):
             self.refresh()
             self.mapping_changed.emit()
 
-    def delete_selected(self):
-        rows = sorted({i.row() for i in self.table.selectedIndexes()}, reverse=True)
-        if not rows:
+    def delete_row(self, row: int):
+        if not (0 <= row < len(self.store.parameters)):
             return
-        for r in rows:
-            if 0 <= r < len(self.store.parameters):
-                del self.store.parameters[r]
+        p = self.store.parameters[row]
+        if QMessageBox.question(self, "Delete", f"Delete parameter '{p.name}'?") != QMessageBox.Yes:
+            return
+        del self.store.parameters[row]
         self.refresh()
         self.mapping_changed.emit()
 
@@ -424,54 +434,24 @@ class MappingPage(QWidget):
     def refresh(self):
         self._suspend = True
         self.table.setRowCount(len(self.store.parameters))
-        # Make delete column narrow
-        self.table.horizontalHeader().setSectionResizeMode(len(self.COLS) - 1, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         for r, p in enumerate(self.store.parameters):
-            unit_display = "--" if p.is_status else p.unit
-            vals = [str(r + 1), p.name, str(p.address), "", str(p.scaling), unit_display, ""]
+            vals = [str(r + 1), p.name, str(p.address), p.data_type, str(p.scaling), p.unit]
             for c, v in enumerate(vals):
                 item = QTableWidgetItem(v)
-                if c in (0, 3, len(self.COLS) - 1):
+                if c == 0:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 if c != 1:
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(r, c, item)
-            # Data type dropdown
-            combo = QComboBox()
-            combo.addItems(self.DATA_TYPES)
-            combo.setCurrentText(p.data_type if p.data_type in self.DATA_TYPES else "u16")
-            combo.currentTextChanged.connect(lambda val, row=r: self._on_dtype_changed(row, val))
-            self.table.setCellWidget(r, 3, combo)
-            # Delete button
-            del_btn = QToolButton()
-            del_btn.setText("🗑")
-            del_btn.setToolTip("Delete this parameter")
-            del_btn.setCursor(Qt.PointingHandCursor)
-            del_btn.setStyleSheet(
-                "QToolButton{background:transparent;border:none;font-size:15px;color:#dc2626;}"
-                "QToolButton:hover{color:#991b1b;}"
-            )
-            del_btn.clicked.connect(lambda _=False, row=r: self._delete_row(row))
-            self.table.setCellWidget(r, len(self.COLS) - 1, del_btn)
+            # Delete button widget
+            btn = QToolButton()
+            btn.setObjectName("IconBtn")
+            btn.setText("🗑")
+            btn.setToolTip("Delete row")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda _=False, row=r: self.delete_row(row))
+            self.table.setCellWidget(r, self.COL_DELETE, btn)
         self._suspend = False
-
-    def _on_dtype_changed(self, row: int, val: str):
-        if self._suspend or not (0 <= row < len(self.store.parameters)):
-            return
-        self.store.parameters[row].data_type = val
-        self.mapping_changed.emit()
-
-    def _delete_row(self, row: int):
-        if not (0 <= row < len(self.store.parameters)):
-            return
-        p = self.store.parameters[row]
-        if QMessageBox.question(self, "Delete parameter",
-                                f"Delete '{p.name}' (address {p.address})?") != QMessageBox.Yes:
-            return
-        del self.store.parameters[row]
-        self.refresh()
-        self.mapping_changed.emit()
 
     def _on_item_changed(self, item: QTableWidgetItem):
         if self._suspend:
@@ -486,15 +466,14 @@ class MappingPage(QWidget):
                 p.name = text or p.name
             elif c == 2:
                 p.address = int(float(text))
+            elif c == 3:
+                if text.lower() not in ("u16", "u32", "s16"):
+                    raise ValueError("Data type must be u16, u32 or s16")
+                p.data_type = text.lower()
             elif c == 4:
                 p.scaling = float(text)
             elif c == 5:
-                if text in ("", "--", "-"):
-                    p.unit = ""
-                    p.is_status = True
-                else:
-                    p.unit = text
-                    p.is_status = False
+                p.unit = text
             self.mapping_changed.emit()
         except Exception as e:
             QMessageBox.warning(self, "Invalid value", str(e))
@@ -509,10 +488,13 @@ class ConnectionPage(QWidget):
     POLL_RATES = [("250 ms", 250), ("500 ms", 500), ("1 sec", 1000),
                   ("2 sec", 2000), ("5 sec", 5000), ("10 sec", 10000)]
 
+    PROTOCOLS = ["Modbus TCP", "Modbus RTU", "Modbus ASCII"]
+
     def __init__(self, store):
         super().__init__()
         self.store = store
         self.client = None
+        self._tid = 0
         self._build()
 
     def _build(self):
@@ -520,29 +502,22 @@ class ConnectionPage(QWidget):
         root.setContentsMargins(32, 28, 32, 28)
         root.setSpacing(18)
 
-        title = QLabel("Connection")
-        title.setObjectName("PageTitle")
+        title = QLabel("Connection"); title.setObjectName("PageTitle")
         sub = QLabel("Configure the protocol, set polling rate, then connect to your device.")
         sub.setObjectName("PageSubtitle")
-        root.addWidget(title)
-        root.addWidget(sub)
+        root.addWidget(title); root.addWidget(sub)
 
-        # Center the card horizontally and constrain its width so fields align nicely
-        center_row = QHBoxLayout()
-        center_row.addStretch()
+        center_row = QHBoxLayout(); center_row.addStretch()
         card = QFrame(); card.setObjectName("Card")
-        card.setMaximumWidth(720)
-        card.setMinimumWidth(560)
+        card.setMaximumWidth(720); card.setMinimumWidth(560)
         cl = QVBoxLayout(card); cl.setContentsMargins(32, 28, 32, 28); cl.setSpacing(14)
-        center_row.addWidget(card, 1)
-        center_row.addStretch()
+        center_row.addWidget(card, 1); center_row.addStretch()
 
         def bold(text):
             lbl = QLabel(text); lbl.setObjectName("FieldLabel")
             lbl.setMinimumWidth(120); lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             return lbl
 
-        # Unified form — all labels share the left column, all fields share the right column
         self.form = QFormLayout()
         self.form.setSpacing(14)
         self.form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -550,15 +525,14 @@ class ConnectionPage(QWidget):
         self.form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         self.form.setHorizontalSpacing(20)
 
-        self.proto_combo = QComboBox(); self.proto_combo.addItems(["Modbus TCP", "Modbus RTU", "Modbus ASCII"])
+        self.proto_combo = QComboBox(); self.proto_combo.addItems(self.PROTOCOLS)
         self.proto_combo.currentTextChanged.connect(self._rebuild_fields)
         self.proto_combo.setMinimumWidth(360)
         self.proto_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.form.addRow(bold("Protocol"), self.proto_combo)
 
-        # Placeholder rows for protocol-specific fields are appended/removed by _rebuild_fields
         self.field_widgets = {}
-        self._dynamic_label = bold  # keep reference for rebuild
+        self._dynamic_label = bold
 
         self.poll_combo = QComboBox()
         for label, _ in self.POLL_RATES:
@@ -567,7 +541,6 @@ class ConnectionPage(QWidget):
         self.poll_combo.setMinimumWidth(360)
         self.poll_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.poll_combo.currentIndexChanged.connect(self._on_poll_changed)
-        # Poll row is added after dynamic fields in _rebuild_fields
 
         cl.addLayout(self.form)
 
@@ -575,99 +548,94 @@ class ConnectionPage(QWidget):
         self.status_dot = QLabel("●"); self.status_dot.setObjectName("StatusDot")
         self.status_dot.setStyleSheet("color:#9ca3af; background: transparent;")
         self.status_text = QLabel("Disconnected"); self.status_text.setObjectName("StatusText")
-        bottom.addWidget(self.status_dot)
-        bottom.addWidget(self.status_text)
-        bottom.addStretch()
-        self.connect_btn = QPushButton("Connect")
-        self.connect_btn.setMinimumWidth(140)
+        bottom.addWidget(self.status_dot); bottom.addWidget(self.status_text); bottom.addStretch()
+        self.connect_btn = QPushButton("Connect"); self.connect_btn.setMinimumWidth(140)
         self.connect_btn.clicked.connect(self.toggle_connect)
         bottom.addWidget(self.connect_btn)
         cl.addLayout(bottom)
 
-        root.addLayout(center_row)
-        root.addStretch()
+        root.addLayout(center_row); root.addStretch()
 
         self._rebuild_fields(self.proto_combo.currentText())
 
     def poll_interval_ms(self) -> int:
         return self.POLL_RATES[self.poll_combo.currentIndex()][1]
 
+    def current_mode(self) -> str:
+        p = self.proto_combo.currentText()
+        if "TCP" in p:
+            return "TCP"
+        if "RTU" in p:
+            return "RTU"
+        return "ASCII"
+
     def _on_poll_changed(self, _idx):
         self.log.emit("INFO", f"Polling rate set to {self.poll_combo.currentText()}")
         self.connected_changed.emit(self.store.connected)
 
+    def _mkline(self, text=""):
+        w = QLineEdit(text)
+        w.setMinimumWidth(360)
+        w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        return w
+
+    def _mkcombo(self, items, default_index=0):
+        w = QComboBox(); w.addItems(items); w.setCurrentIndex(default_index)
+        w.setMinimumWidth(360)
+        w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        return w
+
     def _rebuild_fields(self, proto):
-        # Remove existing dynamic rows (everything between Protocol row and Polling Rate row)
+        # Clear all rows after Protocol
         while self.form.rowCount() > 1:
             self.form.removeRow(1)
         self.field_widgets.clear()
         bold = self._dynamic_label
 
-        def _mk_line(default=""):
-            w = QLineEdit(default)
-            w.setMinimumWidth(360)
-            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            return w
-
-        def _mk_combo(items, default=None):
-            w = QComboBox()
-            w.addItems([str(i) for i in items])
-            if default is not None:
-                w.setCurrentText(str(default))
-            w.setMinimumWidth(360)
-            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            return w
-
         if proto == "Modbus TCP":
-            ip = _mk_line("127.0.0.1")
-            port = _mk_line("502")
-            unit = _mk_line("1")
-            self.form.addRow(bold("IP Address"), ip)
-            self.form.addRow(bold("Port"), port)
-            self.form.addRow(bold("Unit ID"), unit)
-            self.field_widgets = {"ip": ip, "port": port, "unit": unit}
-
-        elif proto in ("Modbus RTU", "Modbus ASCII"):
-            com = _mk_line("COM1" if sys.platform.startswith("win") else "/dev/ttyUSB0")
-            baud = _mk_combo([9600, 19200, 38400, 57600, 115200], default=9600)
-            parity = _mk_combo(["None", "Even", "Odd"], default="None")
-            databits = _mk_combo([7, 8], default=(7 if proto == "Modbus ASCII" else 8))
-            stopbits = _mk_combo([1, 2], default=1)
-            unit = _mk_line("1")
-            self.form.addRow(bold("Serial Port"), com)
-            self.form.addRow(bold("Baud Rate"), baud)
-            self.form.addRow(bold("Parity"), parity)
-            self.form.addRow(bold("Data Bits"), databits)
-            self.form.addRow(bold("Stop Bits"), stopbits)
-            self.form.addRow(bold("Unit ID"), unit)
-            self.field_widgets = {
-                "com": com, "baud": baud, "parity": parity,
-                "databits": databits, "stopbits": stopbits, "unit": unit,
-            }
+            self.field_widgets["ip"] = self._mkline("127.0.0.1")
+            self.field_widgets["port"] = self._mkline("502")
+            self.field_widgets["unit"] = self._mkline("1")
+            self.form.addRow(bold("IP Address"), self.field_widgets["ip"])
+            self.form.addRow(bold("Port"), self.field_widgets["port"])
+            self.form.addRow(bold("Unit ID"), self.field_widgets["unit"])
+        else:
+            # RTU / ASCII — serial parameters
+            self.field_widgets["port"] = self._mkline("COM1" if sys.platform.startswith("win") else "/dev/ttyUSB0")
+            self.field_widgets["baud"] = self._mkcombo(
+                ["1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200"], default_index=3)
+            self.field_widgets["parity"] = self._mkcombo(["None", "Even", "Odd"], default_index=0)
+            self.field_widgets["databits"] = self._mkcombo(["7", "8"], default_index=1)
+            self.field_widgets["stopbits"] = self._mkcombo(["1", "2"], default_index=0)
+            self.field_widgets["unit"] = self._mkline("1")
+            self.form.addRow(bold("Serial Port"), self.field_widgets["port"])
+            self.form.addRow(bold("Baud Rate"), self.field_widgets["baud"])
+            self.form.addRow(bold("Parity"), self.field_widgets["parity"])
+            self.form.addRow(bold("Data Bits"), self.field_widgets["databits"])
+            self.form.addRow(bold("Stop Bits"), self.field_widgets["stopbits"])
+            self.form.addRow(bold("Device ID"), self.field_widgets["unit"])
 
         self.form.addRow(bold("Polling Rate"), self.poll_combo)
-
 
     def toggle_connect(self):
         if self.store.connected:
             self._disconnect()
             return
-
-        proto = self.proto_combo.currentText()
+        mode = self.current_mode()
         try:
             unit = int(self.field_widgets["unit"].text().strip())
-        except (ValueError, KeyError):
-            QMessageBox.warning(self, "Invalid", "Unit ID must be an integer.")
+        except ValueError:
+            QMessageBox.warning(self, "Invalid", "Unit / Device ID must be an integer.")
             return
 
-        if proto == "Modbus TCP":
+        if mode == "TCP":
             ip = self.field_widgets["ip"].text().strip()
             try:
                 port = int(self.field_widgets["port"].text().strip())
             except ValueError:
                 QMessageBox.warning(self, "Invalid", "Port must be an integer.")
                 return
-            self.log.emit("INFO", f"[TCP] Connecting to {ip}:{port} (unit {unit})...")
+            self.log.emit("INFO", f"Connecting Modbus TCP {ip}:{port} (unit {unit})...")
             if HAS_PYMODBUS:
                 try:
                     self.client = ModbusTcpClient(ip, port=port)
@@ -680,29 +648,23 @@ class ConnectionPage(QWidget):
                     return
             else:
                 self.client = "SIMULATED"
-                self.log.emit("INFO", "pymodbus not installed - SIMULATED mode")
         else:
-            com = self.field_widgets["com"].text().strip()
+            serial_port = self.field_widgets["port"].text().strip()
             baud = int(self.field_widgets["baud"].currentText())
-            parity_map = {"None": "N", "Even": "E", "Odd": "O"}
-            parity = parity_map[self.field_widgets["parity"].currentText()]
+            parity = {"None": "N", "Even": "E", "Odd": "O"}[self.field_widgets["parity"].currentText()]
             databits = int(self.field_widgets["databits"].currentText())
             stopbits = int(self.field_widgets["stopbits"].currentText())
-            framer = "ascii" if proto == "Modbus ASCII" else "rtu"
-            self.log.emit(
-                "INFO",
-                f"[{framer.upper()}] Connecting {com} @ {baud} {databits}{parity}{stopbits} (unit {unit})..."
-            )
+            framer = "rtu" if mode == "RTU" else "ascii"
+            self.log.emit("INFO",
+                f"Connecting Modbus {mode} {serial_port} {baud} {databits}{parity}{stopbits} (unit {unit})...")
             if HAS_PYMODBUS:
                 try:
-                    from pymodbus.client import ModbusSerialClient
+                    # pymodbus 3.x accepts framer as string "rtu"/"ascii"
                     self.client = ModbusSerialClient(
-                        port=com, baudrate=baud, parity=parity,
-                        bytesize=databits, stopbits=stopbits,
-                        framer=framer, timeout=1,
-                    )
+                        port=serial_port, baudrate=baud, parity=parity,
+                        bytesize=databits, stopbits=stopbits, timeout=1, framer=framer)
                     if not self.client.connect():
-                        raise ConnectionError(f"Could not open {com}.")
+                        raise ConnectionError(f"Could not open serial port {serial_port}.")
                 except Exception as e:
                     QMessageBox.critical(self, "Connection failed", str(e))
                     self.log.emit("ERR", f"Connection failed: {e}")
@@ -710,15 +672,13 @@ class ConnectionPage(QWidget):
                     return
             else:
                 self.client = "SIMULATED"
-                self.log.emit("INFO", "pymodbus not installed - SIMULATED mode")
 
         self.store.unit_id = unit
         self.store.connected = True
         self._set_status(True)
         self.connect_btn.setText("Disconnect")
         self.connect_btn.setObjectName("Danger")
-        self.connect_btn.style().unpolish(self.connect_btn)
-        self.connect_btn.style().polish(self.connect_btn)
+        self.connect_btn.style().unpolish(self.connect_btn); self.connect_btn.style().polish(self.connect_btn)
         self.log.emit("INFO", "Connected.")
         self.connected_changed.emit(True)
 
@@ -733,62 +693,78 @@ class ConnectionPage(QWidget):
         self._set_status(False)
         self.connect_btn.setText("Connect")
         self.connect_btn.setObjectName("")
-        self.connect_btn.style().unpolish(self.connect_btn)
-        self.connect_btn.style().polish(self.connect_btn)
+        self.connect_btn.style().unpolish(self.connect_btn); self.connect_btn.style().polish(self.connect_btn)
         self.log.emit("INFO", "Disconnected.")
         self.connected_changed.emit(False)
 
     def _set_status(self, ok: bool):
         if ok:
             self.status_dot.setStyleSheet("color:#16a34a;")
-            mode = "" if HAS_PYMODBUS else "  (simulated - install pymodbus for live data)"
+            mode = "" if HAS_PYMODBUS else "  (simulated — install pymodbus for live data)"
             self.status_text.setText(f"Connected{mode}")
         else:
             self.status_dot.setStyleSheet("color:#9ca3af;")
             self.status_text.setText("Disconnected")
 
+    def _next_tid(self):
+        self._tid = (self._tid + 1) & 0xFFFF
+        return self._tid or 1
+
     def read_value(self, p: Parameter):
         if not self.store.connected:
             return None
         count = 2 if p.data_type == "u32" else 1
+        mode = self.current_mode()
+        unit = self.store.unit_id
+        tid = self._next_tid()
+
+        # Emit RAW TX frame
+        tx = build_read_frame(mode, unit, p.address, count, tid)
+        self.log.emit("TX", hexify(tx))
 
         if self.client == "SIMULATED" or not HAS_PYMODBUS:
             import random
-            raw = random.randint(0, 1000)
-            self.log.emit("TX", f"READ addr={p.address} count={count} unit={self.store.unit_id}")
-            if p.is_status:
-                value = "YES" if raw % 2 else "NO"
-            else:
-                value = round(raw * p.scaling, 3)
-            self.log.emit("RX", f"addr={p.address} raw={raw} value={value}{(' '+p.unit) if p.unit else ''}")
-            return value
-
-        try:
-            self.log.emit("TX", f"READ addr={p.address} count={count} unit={self.store.unit_id}")
-            rr = self.client.read_holding_registers(p.address, count=count, slave=self.store.unit_id)
-            if rr.isError():
-                self.log.emit("ERR", f"addr={p.address} -> {rr}")
-                return None
             if count == 2:
-                raw = (rr.registers[0] << 16) | rr.registers[1]
+                raw = random.randint(0, 1_000_000)
+                regs = [(raw >> 16) & 0xFFFF, raw & 0xFFFF]
             else:
-                raw = rr.registers[0]
-            if p.data_type == "s16" and raw >= 32768:
-                raw -= 65536
-            if p.is_status:
-                value = "YES" if raw != 0 else "NO"
+                raw = random.randint(0, 1000)
+                regs = [raw & 0xFFFF]
+            rx = build_read_response(mode, unit, regs, tid)
+            self.log.emit("RX", hexify(rx))
+        else:
+            try:
+                rr = self.client.read_holding_registers(p.address, count=count, slave=unit)
+                if rr.isError():
+                    self.log.emit("ERR", f"addr={p.address} -> {rr}")
+                    return None
+                regs = list(rr.registers)
+                rx = build_read_response(mode, unit, regs, tid)
+                self.log.emit("RX", hexify(rx))
+                if count == 2:
+                    raw = (regs[0] << 16) | regs[1]
+                else:
+                    raw = regs[0]
+            except Exception as e:
+                self.log.emit("ERR", f"addr={p.address} crash: {e}")
+                return None
+
+        if self.client == "SIMULATED" or not HAS_PYMODBUS:
+            if count == 2:
+                raw = (regs[0] << 16) | regs[1]
             else:
-                value = round(raw * p.scaling, 3)
-            self.log.emit("RX", f"addr={p.address} regs={rr.registers} value={value}{(' '+p.unit) if p.unit else ''}")
-            return value
-        except Exception as e:
-            self.log.emit("ERR", f"addr={p.address} crash: {e}")
-            return None
+                raw = regs[0]
+
+        if p.data_type == "s16" and raw >= 32768:
+            raw -= 65536
+
+        if p.is_status:
+            return "YES" if raw != 0 else "NO"
+        return round(raw * p.scaling, 3)
 
 
 # ---------- Parameters page -------------------------------------------------
 class ReorderTable(QTableWidget):
-    """QTableWidget that supports drag-and-drop row reordering and notifies via row_moved(src, dst)."""
     row_moved = pyqtSignal(int, int)
 
     def __init__(self, *a, **kw):
@@ -836,15 +812,12 @@ class ParametersPage(QWidget):
 
     def _build(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(32, 28, 32, 28)
-        root.setSpacing(18)
+        root.setContentsMargins(32, 28, 32, 28); root.setSpacing(18)
 
-        title = QLabel("Parameters")
-        title.setObjectName("PageTitle")
+        title = QLabel("Parameters"); title.setObjectName("PageTitle")
         sub = QLabel("Live values update once connected. Drag the ⋮⋮ handle on any row to reorder.")
         sub.setObjectName("PageSubtitle")
-        root.addWidget(title)
-        root.addWidget(sub)
+        root.addWidget(title); root.addWidget(sub)
 
         card = QFrame(); card.setObjectName("Card")
         cl = QVBoxLayout(card); cl.setContentsMargins(16, 16, 16, 16)
@@ -869,17 +842,15 @@ class ParametersPage(QWidget):
         self.table.setRowCount(len(self.store.parameters))
         for r, p in enumerate(self.store.parameters):
             val = "" if p.value is None else str(p.value)
-            vals = [str(r + 1), p.name, str(p.address), val, p.unit]
+            unit_display = "" if p.is_status else p.unit
+            vals = [str(r + 1), p.name, str(p.address), val, unit_display]
             for c, v in enumerate(vals):
                 item = QTableWidgetItem(v)
                 if c != 1:
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(r, c, item)
-            # Drag handle in last column
-            handle = QLabel("⋮⋮")
-            handle.setObjectName("DragHandle")
-            handle.setAlignment(Qt.AlignCenter)
-            handle.setToolTip("Drag to reorder")
+            handle = QLabel("⋮⋮"); handle.setObjectName("DragHandle")
+            handle.setAlignment(Qt.AlignCenter); handle.setToolTip("Drag to reorder")
             handle.setCursor(Qt.OpenHandCursor)
             self.table.setCellWidget(r, len(self.COLS) - 1, handle)
 
@@ -888,11 +859,8 @@ class ParametersPage(QWidget):
         if not (0 <= src < len(ps)):
             return
         dst = max(0, min(dst, len(ps) - 1))
-        p = ps.pop(src)
-        ps.insert(dst, p)
+        p = ps.pop(src); ps.insert(dst, p)
         self.refresh()
-
-
 
     def poll_values(self):
         if self.store.connected:
@@ -909,19 +877,15 @@ class DebugConsolePage(QWidget):
 
     def _build(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(32, 28, 32, 28)
-        root.setSpacing(18)
+        root.setContentsMargins(32, 28, 32, 28); root.setSpacing(18)
 
-        title = QLabel("Debug Console")
-        title.setObjectName("PageTitle")
-        sub = QLabel("Live TX / RX log of Modbus communication.")
+        title = QLabel("Debug Console"); title.setObjectName("PageTitle")
+        sub = QLabel("Raw Modbus frames (TX / RX) — hex bytes for TCP/RTU, ASCII text for Modbus ASCII.")
         sub.setObjectName("PageSubtitle")
-        root.addWidget(title)
-        root.addWidget(sub)
+        root.addWidget(title); root.addWidget(sub)
 
         bar = QHBoxLayout()
-        self.clear_btn = QPushButton("Clear")
-        self.clear_btn.setObjectName("Secondary")
+        self.clear_btn = QPushButton("Clear"); self.clear_btn.setObjectName("Secondary")
         self.clear_btn.clicked.connect(lambda: self.console.clear())
         bar.addStretch(); bar.addWidget(self.clear_btn)
         root.addLayout(bar)
@@ -955,26 +919,22 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Modbus Mapping Studio")
+        self.setWindowTitle("Universal Modbus Monitor")
+        self.icon_path = resource_path("delta_icon.png")
+        self.setWindowIcon(QIcon(self.icon_path))
         self.resize(1180, 720)
         self.store = Store()
         self._build()
 
     def _build(self):
-        central = QWidget()
-        self.setCentralWidget(central)
-        layout = QHBoxLayout(central)
-        layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(0)
+        central = QWidget(); self.setCentralWidget(central)
+        layout = QHBoxLayout(central); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(0)
 
-        # Sidebar
-        sidebar = QWidget(); sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(240)
+        sidebar = QWidget(); sidebar.setObjectName("Sidebar"); sidebar.setFixedWidth(240)
         sl = QVBoxLayout(sidebar); sl.setContentsMargins(0, 0, 0, 0); sl.setSpacing(0)
 
         self.logo_label = QLabel()
-        self.logo_label.setObjectName("LogoLabel")
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        logo_path = os.path.join(script_dir, "delta_logo.png")
+        logo_path = resource_path("delta_logo-removebg-preview.png")
         pm = make_transparent_pixmap(logo_path, max_w=130) if os.path.exists(logo_path) else QPixmap()
         if not pm.isNull():
             self.logo_label.setPixmap(pm)
@@ -985,43 +945,31 @@ class MainWindow(QMainWindow):
         sl.addWidget(self.logo_label)
 
         brand = QLabel("Universal Modbus Monitor")
-        brand.setObjectName("Brand"); brand.setAlignment(Qt.AlignCenter)
-        brand.setWordWrap(True)
-        sub = QLabel("Hardware Diagnostics")
-        sub.setObjectName("BrandSub"); sub.setAlignment(Qt.AlignCenter)
-        sl.addWidget(brand)
-        sl.addWidget(sub)
+        brand.setObjectName("Brand"); brand.setAlignment(Qt.AlignCenter); brand.setWordWrap(True)
+        sub = QLabel("Hardware Diagnostics"); sub.setObjectName("BrandSub"); sub.setAlignment(Qt.AlignCenter)
+        sl.addWidget(brand); sl.addWidget(sub)
 
         self.nav = QListWidget(); self.nav.setObjectName("NavList")
         for label, _ in self.NAV_ITEMS:
             QListWidgetItem(label, self.nav)
         sl.addWidget(self.nav, 1)
 
-        # Theme toggle + footer
-        footer_row = QHBoxLayout()
-        footer_row.setContentsMargins(16, 8, 16, 12)
-        footer = QLabel("v1.2"); footer.setObjectName("Footer")
-        footer.setContentsMargins(0, 0, 0, 0)
-        self.theme_btn = QToolButton()
-        self.theme_btn.setObjectName("ThemeToggle")
-        self.theme_btn.setText("🌙")
-        self.theme_btn.setToolTip("Switch to dark theme")
+        footer_row = QHBoxLayout(); footer_row.setContentsMargins(16, 8, 16, 12)
+        footer = QLabel("v1.3"); footer.setObjectName("Footer"); footer.setContentsMargins(0, 0, 0, 0)
+        self.theme_btn = QToolButton(); self.theme_btn.setObjectName("ThemeToggle")
+        self.theme_btn.setText("🌙"); self.theme_btn.setToolTip("Switch to dark theme")
         self.theme_btn.clicked.connect(self._toggle_theme)
-        footer_row.addWidget(footer)
-        footer_row.addStretch()
-        footer_row.addWidget(self.theme_btn)
+        footer_row.addWidget(footer); footer_row.addStretch(); footer_row.addWidget(self.theme_btn)
         sl.addLayout(footer_row)
 
         layout.addWidget(sidebar)
 
-        # Pages
         self.stack = QStackedWidget()
         self.connection_page = ConnectionPage(self.store)
         self.mapping_page = MappingPage(self.store)
         self.parameters_page = ParametersPage(self.store, self.connection_page)
         self.debug_page = DebugConsolePage()
 
-        # Order matches NAV_ITEMS
         self.stack.addWidget(self.connection_page)
         self.stack.addWidget(self.mapping_page)
         self.stack.addWidget(self.parameters_page)
@@ -1029,9 +977,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.stack, 1)
 
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
-        self.nav.setCurrentRow(0)  # Connection is default
+        self.nav.setCurrentRow(0)
 
-        # Wiring
         self.connection_page.log.connect(self.debug_page.append)
         self.connection_page.connected_changed.connect(self._on_connected)
         self.mapping_page.csv_imported.connect(self._after_csv_import)
@@ -1039,35 +986,27 @@ class MainWindow(QMainWindow):
 
     def _on_connected(self, connected: bool):
         self.parameters_page.refresh()
-        # If connected and there are no parameters yet, nudge user to Mapping
         if connected and not self.store.parameters:
             QMessageBox.information(
                 self, "Add a mapping",
                 "Connected. Now import a CSV in the Mapping tab — values will appear in Parameters automatically.",
             )
-            # jump to mapping tab
             self.nav.setCurrentRow(1)
 
     def _after_csv_import(self):
-        # After importing CSV, jump to Parameters tab to see live values
         self.parameters_page.refresh()
         self.nav.setCurrentRow(2)
 
     def _toggle_theme(self):
         app = QApplication.instance()
         if getattr(app, "_theme", "light") == "light":
-            app.setStyleSheet(DARK_STYLE)
-            app._theme = "dark"
-            self.theme_btn.setText("☀")
-            self.theme_btn.setToolTip("Switch to light theme")
+            app.setStyleSheet(DARK_STYLE); app._theme = "dark"
+            self.theme_btn.setText("☀"); self.theme_btn.setToolTip("Switch to light theme")
         else:
-            app.setStyleSheet(LIGHT_STYLE)
-            app._theme = "light"
-            self.theme_btn.setText("🌙")
-            self.theme_btn.setToolTip("Switch to dark theme")
+            app.setStyleSheet(LIGHT_STYLE); app._theme = "light"
+            self.theme_btn.setText("🌙"); self.theme_btn.setToolTip("Switch to dark theme")
 
 
-# ---------- Entry -----------------------------------------------------------
 def main():
     app = QApplication(sys.argv)
     app._theme = "light"
