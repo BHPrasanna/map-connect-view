@@ -555,7 +555,9 @@ class ConnectionPage(QWidget):
         self._rebuild_fields(self.proto_combo.currentText())
 
     def poll_interval_ms(self) -> int:
-        return self.POLL_RATES[self.poll_combo.currentIndex()][1]
+        idx = self.poll_combo.currentIndex() if self.poll_combo else self._poll_index
+        return self.POLL_RATES[idx][1]
+
 
     def current_mode(self) -> str:
         p = self.proto_combo.currentText()
