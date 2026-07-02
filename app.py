@@ -534,15 +534,11 @@ class ConnectionPage(QWidget):
         self.field_widgets = {}
         self._dynamic_label = bold
 
-        self.poll_combo = QComboBox()
-        for label, _ in self.POLL_RATES:
-            self.poll_combo.addItem(label)
-        self.poll_combo.setCurrentIndex(2)
-        self.poll_combo.setMinimumWidth(360)
-        self.poll_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.poll_combo.currentIndexChanged.connect(self._on_poll_changed)
+        self._poll_index = 2  # remembered across rebuilds
+        self.poll_combo = None
 
         cl.addLayout(self.form)
+
 
         bottom = QHBoxLayout()
         self.status_dot = QLabel("●"); self.status_dot.setObjectName("StatusDot")
@@ -559,7 +555,9 @@ class ConnectionPage(QWidget):
         self._rebuild_fields(self.proto_combo.currentText())
 
     def poll_interval_ms(self) -> int:
-        return self.POLL_RATES[self.poll_combo.currentIndex()][1]
+        idx = self.poll_combo.currentIndex() if self.poll_combo else self._poll_index
+        return self.POLL_RATES[idx][1]
+
 
     def current_mode(self) -> str:
         p = self.proto_combo.currentText()
@@ -586,10 +584,13 @@ class ConnectionPage(QWidget):
         return w
 
     def _rebuild_fields(self, proto):
-        # Clear all rows after Protocol
+        # Remember polling selection, then clear all rows after Protocol.
+        if self.poll_combo is not None:
+            self._poll_index = self.poll_combo.currentIndex()
         while self.form.rowCount() > 1:
             self.form.removeRow(1)
         self.field_widgets.clear()
+        self.poll_combo = None  # was destroyed by removeRow above
         bold = self._dynamic_label
 
         if proto == "Modbus TCP":
@@ -615,7 +616,16 @@ class ConnectionPage(QWidget):
             self.form.addRow(bold("Stop Bits"), self.field_widgets["stopbits"])
             self.form.addRow(bold("Device ID"), self.field_widgets["unit"])
 
+        # Recreate the polling combo fresh each rebuild.
+        self.poll_combo = QComboBox()
+        for label, _ in self.POLL_RATES:
+            self.poll_combo.addItem(label)
+        self.poll_combo.setCurrentIndex(self._poll_index)
+        self.poll_combo.setMinimumWidth(360)
+        self.poll_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.poll_combo.currentIndexChanged.connect(self._on_poll_changed)
         self.form.addRow(bold("Polling Rate"), self.poll_combo)
+
 
     def toggle_connect(self):
         if self.store.connected:
@@ -734,7 +744,23 @@ class ConnectionPage(QWidget):
             self.log.emit("RX", hexify(rx))
         else:
             try:
-                rr = self.client.read_holding_registers(p.address, count=count, slave=unit)
+                # Handle pymodbus API differences across versions.
+                rr = None
+                last_err = None
+                for kwargs in (
+                    {"count": count, "slave": unit},   # pymodbus 3.x
+                    {"count": count, "unit": unit},    # pymodbus 2.x
+                    {"count": count, "device_id": unit},  # pymodbus 3.7+
+                ):
+                    try:
+                        rr = self.client.read_holding_registers(p.address, **kwargs)
+                        last_err = None
+                        break
+                    except TypeError as te:
+                        last_err = te
+                        continue
+                if rr is None:
+                    raise last_err or RuntimeError("read failed")
                 if rr.isError():
                     self.log.emit("ERR", f"addr={p.address} -> {rr}")
                     return None
@@ -748,6 +774,7 @@ class ConnectionPage(QWidget):
             except Exception as e:
                 self.log.emit("ERR", f"addr={p.address} crash: {e}")
                 return None
+
 
         if self.client == "SIMULATED" or not HAS_PYMODBUS:
             if count == 2:
